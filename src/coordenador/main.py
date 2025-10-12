@@ -1,12 +1,13 @@
 import asyncio
 import uuid
-from ..shared import mensagens
+from src.shared import mensagens
 
 HOST = "127.0.0.1"
 PORTA = "8000"
-QUANT_SUPERNOS = 1
 
+QUANT_SUPERNOS = 1
 supernos = []
+
 # Evento para sinalizar quando os nós estão prontos
 supernos_prontos = asyncio.Event()
 
@@ -22,7 +23,7 @@ async def superno_handler(reader, writer):
     try:
         # Espera pela solicitação de registro no coordenador
         dados = await reader.read(4096)
-        requisicao_registro = mensagens.recebe_mensagem(dados)
+        requisicao_registro = mensagens.decodifica_mensagem(dados)
 
         if not requisicao_registro or requisicao_registro.get("command") != mensagens.CMD_SN2COORD_REQUISICAO_REGISTRO:
             print(f"Mensagem de registro inválida de {addr}.")
@@ -38,7 +39,7 @@ async def superno_handler(reader, writer):
         
         # Aguarda ACK do super nó
         dados = await reader.read(4096)
-        msg_ack = mensagens.recebe_mensagem(dados)
+        msg_ack = mensagens.decodifica_mensagem(dados)
 
         if not msg_ack or msg_ack.get("command") != mensagens.CMD_SN2COORD_ACK_REGISTRO:
             print(f"ACK inválido de {addr}.")
@@ -76,7 +77,6 @@ async def broadcast_registros_concluidos():
     """
 
     print("Todos os super nós foram registrados. Preparando para realizar o broadcast...")
-
     msg_broadcast = mensagens.criar_confirmacao_registro()
 
     tasks = [] # Lista de tarefas para enviar a mensagem a todos os super nós
@@ -85,15 +85,13 @@ async def broadcast_registros_concluidos():
         tasks.append(sn["writer"].drain())
         print(f"Mensagem enviada para {sn["addr"]}")
 
-    # Executa todas as tarefas de envio concorrentemente
+    # Executa todas as tarefas de envio aos super nós concorrentemente
     await asyncio.gather(*tasks)
-
     print("Broadcast aos super nós concluído.")
 
 async def main():
     print("Nó COORDENADOR está sendo iniciado...")
     servidor = await asyncio.start_server(superno_handler, HOST, PORTA)
-
     addr = servidor.sockets[0].getsockname()
     print(f"Coordenador escutando em: {addr[0]}:{addr[1]}")
 

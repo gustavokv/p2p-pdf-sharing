@@ -1,5 +1,4 @@
 import json
-import socket
 
 """ Comandos para comunicação do coordenador com o super nó """
 CMD_SN2COORD_REQUISICAO_REGISTRO = "SN2COORD_REQUISICAO_REGISTRO"
@@ -18,9 +17,9 @@ def criar_mensagem(comando, **payload):
 
     return json.dumps(mensagem)
 
-def recebe_mensagem(dados_em_bytes):
+def decodifica_mensagem(dados_em_bytes):
     """
-    Decodifica uma cadeia de bytes para JSON
+    Decodifica uma cadeia de bytes para JSON e devolve um dict
     """
 
     if not dados_em_bytes:
@@ -30,15 +29,17 @@ def recebe_mensagem(dados_em_bytes):
         dados_json = dados_em_bytes.decode('utf-8')
         return json.loads(dados_json)
     except (json.JSONDecodeError, UnicodeDecodeError) as error:
-        print(f"[ERROR] Erro ao RECEBER mensagem: {error}")
+        print(f"[ERROR] Erro ao DECODIFICAR mensagem: {error}")
         return None
 
 # <--- Funções do Coordenador --->
 
 def cria_resposta_coordenador(status, chave_unica):
+    """ Devolve ao super nó uma chave única """
     return criar_mensagem(CMD_COORD2SN_RESPOSTA_REGISTRO, status=status, chave_unica=chave_unica)
 
 def criar_confirmacao_registro():
+    """ Broadcast para todos os super nós indicando que todos foram registrados """
     return criar_mensagem(CMD_COORD2SN_CONFIRMACAO_REGISTRO, mensagem="Todos os supernós foram registrados com sucesso.")
 
 
