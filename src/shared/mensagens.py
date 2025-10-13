@@ -47,3 +47,6 @@ def criar_confirmacao_registro():
 
 def cria_requisicao_registro_superno(ip, porta=8000):
     return criar_mensagem(CMD_SN2COORD_REQUISICAO_REGISTRO, endereco_ip=ip, porta=porta)
+
+def cria_ack_resposta(chave_unica):
+    return criar_mensagem(CMD_SN2COORD_ACK_REGISTRO, chave_unica=chave_unica)
