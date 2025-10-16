@@ -1,15 +1,30 @@
 import asyncio
+import json
 import uuid
 from src.shared import mensagens
 
 HOST = "127.0.0.1"
 PORTA = 8000
 
-QUANT_SUPERNOS = 1
+TOTAL_SUPERNOS = 1
 supernos = []
 
 # Evento para sinalizar quando os nós estão prontos
 lock_supernos = asyncio.Lock()
+
+def salvar_arquivo_supernos(path_arquivo):
+    """
+    Função para salvar localmente o arquivo json contendo
+    todos os supernśo registrados (para o caso de eleição)
+    """
+
+    json = {
+        "TOTAL_SUPERNOS": TOTAL_SUPERNOS,
+        "supernos": supernos
+    }
+
+    with open(path_arquivo, "w") as f:
+        json.dump(json, f)
 
 async def superno_handler(reader, writer):
     """ 
@@ -64,7 +79,9 @@ async def superno_handler(reader, writer):
             is_registrado = True
             print(f"Novo super nó registrado. Total de super nós registrados: {len(supernos)}.")
 
-            if len(supernos) == QUANT_SUPERNOS:
+            salvar_arquivo_supernos("lista_supernos_ativos.json")
+
+            if len(supernos) == TOTAL_SUPERNOS:
                 # create_task para executar o broadcast e não bloquear esta função
                 asyncio.create_task(broadcast_registros_concluidos())
 
@@ -83,6 +100,8 @@ async def superno_handler(reader, writer):
             if is_registrado:
                 supernos[:] = [sn for sn in supernos if sn["addr"] != addr]
                 print(f"Super nó {addr} removido da lista")
+
+            salvar_arquivo_supernos("lista_supernos_ativos.json")
 
         writer.close()
         await writer.wait_closed()
@@ -119,4 +138,5 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
+        salvar_arquivo_supernos("lista_supernos_ativos.json")
         print("Coordenador encerrado pelo usuário.")
