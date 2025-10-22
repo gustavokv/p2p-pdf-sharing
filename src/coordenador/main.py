@@ -12,6 +12,8 @@ supernos = []
 # Evento para sinalizar quando os nós estão prontos
 lock_supernos = asyncio.Lock()
 
+#def handle_requisicoes_superno(msg):
+
 def salvar_arquivo_supernos(path_arquivo):
     """
     Função para salvar localmente o arquivo json contendo
@@ -87,9 +89,20 @@ async def superno_handler(reader, writer):
 
         while True:
             dados = await reader.read(4096)
+
             if not dados:
-                print(f"Super nó {addr} se deconectou")
+                print(f"Super nó {addr} se desconectou.")
                 break
+
+            msg_recebida = mensagens.decodifica_mensagem(dados)
+
+            if msg_recebida and msg_recebida.get("comando") == mensagens.CMD_SN2COORD_FINISH:
+                print(f"Super nó {addr} finalizou o registro dos clientes: {msg_recebida.get("mensagem")}.")
+                return
+            else:
+                print("IMPLEMENTAR")
+                # Recebe demais requisições do super nó
+                #handle_requisicoes_superno(msg_recebida)
 
     except (ConnectionResetError, asyncio.IncompleteReadError) as error:
         print(f"Conexão com {addr} perdida. Erro: {error}")

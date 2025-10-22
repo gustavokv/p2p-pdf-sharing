@@ -1,11 +1,14 @@
 import json
 
 """ Comandos para comunicação do coordenador com o super nó """
-CMD_SN2COORD_REQUISICAO_REGISTRO = "SN2COORD_REQUISICAO_REGISTRO"
 CMD_COORD2SN_RESPOSTA_REGISTRO = "COORD2SN_RESPOSTA_REGISTRO"
-CMD_SN2COORD_ACK_REGISTRO = "SN2COORD_ACK_REGISTRO"
 CMD_COORD2SN_CONFIRMACAO_REGISTRO = "COORD2SN_CONFIRMACAO_REGISTRO"
 CMD_COORD2SN_LISTA_SUPERNOS = "COORD2SN_LISTA_SUPERNOS"
+
+""" Comandos para comunicação do super nó com o coordenador """
+CMD_SN2COORD_REQUISICAO_REGISTRO = "SN2COORD_REQUISICAO_REGISTRO"
+CMD_SN2COORD_ACK_REGISTRO = "SN2COORD_ACK_REGISTRO"
+CMD_SN2COORD_FINISH = "SN2COORD_FINISH"
 
 # <--- Padroniza a forma de troca de mensagem entre nós --->
 
@@ -50,3 +53,6 @@ def cria_requisicao_registro_superno(ip, porta=8000):
 
 def cria_ack_resposta(chave_unica):
     return criar_mensagem(CMD_SN2COORD_ACK_REGISTRO, chave_unica=chave_unica)
+
+def cria_pacote_finish():
+    return criar_mensagem(CMD_SN2COORD_FINISH, mensagem="Super nó finalizou o registro dos clientes.")
