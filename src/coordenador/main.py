@@ -20,13 +20,25 @@ def salvar_arquivo_supernos(path_arquivo):
     todos os supernśo registrados (para o caso de eleição)
     """
 
-    json = {
-        "TOTAL_SUPERNOS": TOTAL_SUPERNOS,
-        "supernos": supernos
+    supernos_para_salvar = [
+        {
+            "addr": sn["addr"],
+            "chave": sn["chave"],
+            "ip": sn["ip"],
+            "porta": sn["porta"]
+        } for sn in supernos
+    ]
+
+    dados_para_salvar = {
+        "TOTAL_SUPERNOS": len(supernos),
+        "supernos": supernos_para_salvar
     }
 
-    with open(path_arquivo, "w") as f:
-        json.dump(json, f)
+    try:
+        with open(path_arquivo, "w") as f:
+            json.dump(dados_para_salvar, f, indent=4) 
+    except Exception as e:
+        print(f"Falha ao salvar o arquivo de super nós: {e}")
 
 async def superno_handler(reader, writer):
     """ 
