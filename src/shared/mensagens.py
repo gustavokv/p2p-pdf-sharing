@@ -41,9 +41,12 @@ def cria_resposta_coordenador(status, chave_unica):
     """ Devolve ao super nó uma chave única """
     return criar_mensagem(CMD_COORD2SN_RESPOSTA_REGISTRO, status=status, chave_unica=chave_unica)
 
-def criar_confirmacao_registro():
+def cria_confirmacao_registro():
     """ Broadcast para todos os super nós indicando que todos foram registrados """
     return criar_mensagem(CMD_COORD2SN_CONFIRMACAO_REGISTRO, mensagem="Todos os supernós foram registrados com sucesso.")
+
+def cria_broadcast_lista_supernos(supernos_ativos):
+    return criar_mensagem(CMD_COORD2SN_LISTA_SUPERNOS, supernos=supernos_ativos)
 
 
 # <--- Funções do Super nó --->
