@@ -14,31 +14,40 @@ lock_supernos = asyncio.Lock()
 
 #def handle_requisicoes_superno(msg):
 
-def salvar_arquivo_supernos(path_arquivo):
+async def broadcast_lista_supernos():
     """
-    Função para salvar localmente o arquivo json contendo
-    todos os supernśo registrados (para o caso de eleição)
+    Função para realizar o broadcast da lista de super nós
+    ativos aos super nós.
     """
+    async with lock_supernos:
+        if not supernos:
+            return
+        
+        print(f'Lista dos supernós ativos atualizada contendo {len(supernos)} super nós ativos.')
+        print('Preparando para realizar o broadcast...')
 
-    supernos_para_salvar = [
-        {
-            "addr": sn["addr"],
-            "chave": sn["chave"],
-            "ip": sn["ip"],
-            "porta": sn["porta"]
-        } for sn in supernos
-    ]
+        supernos_para_enviar = [
+            {
+                "addr": sn["addr"],
+                "chave": sn["chave"],
+                "ip": sn["ip"],
+                "porta": sn["porta"]
+            } for sn in supernos
+        ]
 
-    dados_para_salvar = {
-        "TOTAL_SUPERNOS": len(supernos),
-        "supernos": supernos_para_salvar
-    }
+        msg_broadcast = mensagens.cria_broadcast_lista_supernos(supernos_para_enviar)
 
-    try:
-        with open(path_arquivo, "w") as f:
-            json.dump(dados_para_salvar, f, indent=4) 
-    except Exception as e:
-        print(f"Falha ao salvar o arquivo de super nós: {e}")
+        tasks = []
+        for sn in supernos:
+            try:
+                sn["writer"].write(msg_broadcast.encode('utf-8'))
+                tasks.append(sn["writer"].drain())
+            except Exception as e:
+                print(f"Falha ao adicionar mensagem na fila para {sn["addr"]}: {e}")
+
+        if tasks:
+            await asyncio.gather(*tasks)
+            print("Broadcast da lista de super nós realizada com sucesso.")
 
 async def superno_handler(reader, writer):
     """ 
@@ -93,7 +102,7 @@ async def superno_handler(reader, writer):
             is_registrado = True
             print(f"Novo super nó registrado. Total de super nós registrados: {len(supernos)}.")
 
-            salvar_arquivo_supernos("lista_supernos_ativos.json")
+            asyncio.create_task(broadcast_lista_supernos())
 
             if len(supernos) == TOTAL_SUPERNOS:
                 # create_task para executar o broadcast e não bloquear esta função
@@ -126,7 +135,7 @@ async def superno_handler(reader, writer):
                 supernos[:] = [sn for sn in supernos if sn["addr"] != addr]
                 print(f"Super nó {addr} removido da lista")
 
-            salvar_arquivo_supernos("lista_supernos_ativos.json")
+            asyncio.create_task(broadcast_lista_supernos())
 
         writer.close()
         await writer.wait_closed()
@@ -137,7 +146,7 @@ async def broadcast_registros_concluidos():
     """
 
     print("Todos os super nós foram registrados. Preparando para realizar o broadcast...")
-    msg_broadcast = mensagens.criar_confirmacao_registro()
+    msg_broadcast = mensagens.cria_confirmacao_registro()
 
     async with lock_supernos:
         tasks = [] # Lista de tarefas para enviar a mensagem a todos os super nós
@@ -163,5 +172,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        salvar_arquivo_supernos("lista_supernos_ativos.json")
         print("Coordenador encerrado pelo usuário.")
