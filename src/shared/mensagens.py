@@ -10,6 +10,17 @@ CMD_SN2COORD_REQUISICAO_REGISTRO = "SN2COORD_REQUISICAO_REGISTRO"
 CMD_SN2COORD_ACK_REGISTRO = "SN2COORD_ACK_REGISTRO"
 CMD_SN2COORD_FINISH = "SN2COORD_FINISH"
 
+#SUPERNO PARA CLIENTE
+CMD_SN2CLIENTE_RESPOSTA_REGISTRO = "CMD_SN2CLIENTE_REQUISICAO_REGISTRO"
+CMD_SN2CLIENTE_CONFIRMACAO_REGISTRO = "CMD_SN2CLIENTE_CONFIRMACAO_REGISTRO"
+CMD_SN2CLIENTE_LISTA_CLIENTE = "CMD_SN2CLIENTE_LISTA_CLIENTE"
+
+#CLIENTE PARA SUPERNO
+CMD_CLIENTESN2_REQUISICAO_REGISTRO = "CMD_CLIENTESN2_REQUISICAO_REGISTRO_E_ENVIO_DE_CHAVE_UNICA"
+CMD_CLIENTESN2_ACK_REGISTRO = "CMD_CLIENTESN2_ACK_REGISTRO"
+CMD_CLIENTESN2_FINISH = "CMD_CLIENTESN2_FINISH"
+
+
 # <--- Padroniza a forma de troca de mensagem entre nós --->
 
 def criar_mensagem(comando, **payload):
@@ -54,8 +65,17 @@ def cria_broadcast_lista_supernos(supernos_ativos):
 def cria_requisicao_registro_superno(ip, porta=8000):
     return criar_mensagem(CMD_SN2COORD_REQUISICAO_REGISTRO, endereco_ip=ip, porta=porta)
 
-def cria_ack_resposta(chave_unica):
+def cria_ack_resposta_para_coord(chave_unica):
     return criar_mensagem(CMD_SN2COORD_ACK_REGISTRO, chave_unica=chave_unica)
 
 def cria_pacote_finish():
     return criar_mensagem(CMD_SN2COORD_FINISH, mensagem="Super nó finalizou o registro dos clientes.")
+
+def cria_ack_resposta_para_cliente(chave_unica):
+    return criar_mensagem(CMD_SN2CLIENTE_RESPOSTA_REGISTRO, chave_unica = chave_unica)
+
+# <--- Funções do cliente --->
+
+def cria_requisicao_registro_cliente(ip, porta, chave_unica):
+    return criar_mensagem(CMD_CLIENTESN2_REQUISICAO_REGISTRO, endereco_ip = ip, porta=porta, chave_unica = chave_unica)
+
