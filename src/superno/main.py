@@ -1,19 +1,25 @@
 import asyncio
+import sys
 from src.shared import mensagens
 
 ipServidor = "127.0.0.1"
 ipLocal = "127.0.0.1"
-listaDeSupernos = None
 listaDeClientes = []
+ListaDeSupernos = []
+superNosVizinhos = None
 portaCoordenador = 8000
-portaSuperno = 8001
+portaSuperno = None
 nunClinteMax = 1
 lock = asyncio.Lock()
-readWriterCoord = {}
+Coord = {}
 
 async def registro():
     reader, writer = await asyncio.open_connection(ipServidor, portaCoordenador)
     print(f"Conectado ao coordenador em {ipServidor}:{portaCoordenador}")
+
+    global portaSuperno
+    portaSuperno = int(sys.argv[1])
+    print(f"porta: {portaSuperno}")
 
     msg_registro = mensagens.cria_requisicao_registro_superno(ipLocal, portaSuperno)
     writer.write(msg_registro.encode('utf-8'))
@@ -32,17 +38,17 @@ async def registro():
 
     dados = await reader.read(4096)
     confirmacao = mensagens.decodifica_mensagem(dados)
-    global listaDeSupernos
-    listaDeSupernos = confirmacao["payload"]["supernos"]
-    print(f"Lista de supernos recebida: {listaDeSupernos}")
+    global ListaDeSupernos
+    ListaDeSupernos = confirmacao["payload"]["supernos"]
+    print(f"Lista de supernos recebida: {ListaDeSupernos}")
 
     dados = await reader.read(4096)
     confirmacao = mensagens.decodifica_mensagem(dados)
     print(f"Mensagem do coordenador: {confirmacao}")
 
-    readerWriter = {"reader": reader, "writer": writer}
-    async with lock:
-        readWriterCoord[ipLocal] = readerWriter
+
+    Coord["reader"] = reader
+    Coord["writer"] = writer
 
     print("Registro finalizado. Conexão ativa.")
 
@@ -51,33 +57,66 @@ async def servidorSuperNo(reader, writer):
     addr = writer.get_extra_info('peername')
     print(f"Cliente {addr} conectado.")
 
+
     try:
         dados = await reader.read(4096)
-        requisicao_registro = mensagens.decodifica_mensagem(dados)
+        novoComando = mensagens.decodifica_mensagem(dados)
 
-        novo_cliente = {
-            "writer": writer,
-            "chave": requisicao_registro["payload"]["chave_unica"],
-            "ip": requisicao_registro["payload"]["endereco_ip"],
-            "porta": requisicao_registro["payload"]["porta"]
-        }
+        if novoComando["comando"] == mensagens.CMD_CLIENTESN2_REQUISICAO_REGISTRO:
+            await NovoCliente(reader, writer, novoComando)
 
-        async with lock:
-            listaDeClientes.append(novo_cliente)
-            if len(listaDeClientes) == nunClinteMax:
-                print("manda pacote finish")
+        if novoComando["comando"] == mensagens.CMD_SN2COORD_FINISH:
+            print(f"superno {addr} finalizou registro de clientes")
 
-        msgACK = mensagens.cria_ack_resposta_para_cliente(novo_cliente["chave"])
-        writer.write(msgACK.encode('utf-8'))
-        await writer.drain()
 
     except (ConnectionResetError, asyncio.IncompleteReadError) as error:
         print(f"Conexão com {addr} perdida. Erro: {error}")
     except Exception as error:
         print(f"Erro inesperado com {addr}. Erro: {error}")
 
+async def NovoCliente(reader, writer, requisicao_registro):
+    novo_cliente = {
+        "writer": writer,
+        "reader": reader,
+        "chave": requisicao_registro["payload"]["chave_unica"],
+        "ip": requisicao_registro["payload"]["endereco_ip"],
+        "porta": requisicao_registro["payload"]["porta"]
+    }
+
+    async with lock:
+        listaDeClientes.append(novo_cliente)
+        if len(listaDeClientes) == nunClinteMax: #manda pacote finish
+            await conectarComOutrosSupernos()
+            for sn in listaDeClientes:
+                msg = mensagens.cria_pacote_finish()
+                sn["writer"].write(msg.encode('utf-8'))
+                await sn["writer"].drain()
+
+    msgACK = mensagens.cria_ack_resposta_para_cliente(novo_cliente["chave"])
+    writer.write(msgACK.encode('utf-8'))
+    await writer.drain()
+
+async def conectarComOutrosSupernos():
+    vizinhos = []
+    for sn in ListaDeSupernos:
+        if sn["ip"] == ipLocal and sn["porta"] == portaSuperno:
+            continue  # Não conecta com ele mesmo
+        try:
+            reader, writer = await asyncio.open_connection(sn["ip"], sn["porta"])
+            print(f"Conectado com supernó {sn['ip']}:{sn['porta']}")
+            # Guarda as conexões em uma lista global
+            vizinhos.append({"reader": reader, "writer": writer, "info": sn})
+        except Exception as e:
+            print(f"Falha ao conectar com {sn['ip']}:{sn['porta']} -> {e}")
+
+    global superNosVizinhos
+    superNosVizinhos = vizinhos
+
+
 async def main():
+
     await registro()
+
     servidor = await asyncio.start_server(servidorSuperNo, ipLocal, portaSuperno)
     print(f"Super nó escutando em {ipLocal}:{portaSuperno}")
 
