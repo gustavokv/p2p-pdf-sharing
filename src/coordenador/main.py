@@ -102,7 +102,6 @@ async def superno_handler(reader, writer):
             is_registrado = True
             print(f"Novo super nó registrado. Total de super nós registrados: {len(supernos)}.")
 
-
             if len(supernos) == TOTAL_SUPERNOS:
                 # create_task para executar o broadcast e não bloquear esta função
                 asyncio.create_task(broadcast_lista_supernos())
