@@ -1,4 +1,5 @@
 import asyncio
+import sys
 import uuid
 from src.shared import mensagens
 
@@ -9,6 +10,9 @@ porta = 8001
 
 
 async def registro():
+    global porta
+    porta = int(sys.argv[1])
+
     #conectar ao superno
     reader, writer = await asyncio.open_connection(ipSuperno, porta)
     print(f"Conectado ao superno em {ipSuperno}:{porta}")
@@ -20,7 +24,6 @@ async def registro():
 
     msgDeregistro = mensagens.cria_requisicao_registro_cliente(ipLocal, porta, chave_identificadora)
     writer.write(msgDeregistro.encode('utf-8'))
-
     await writer.drain()
 
     #espera ack
@@ -28,7 +31,7 @@ async def registro():
     requisicao_registro = mensagens.decodifica_mensagem(dados)
     print("ACK recebido do supernó:", requisicao_registro)
 
-    asyncio.sleep(999.0)
+    await asyncio.sleep(999.0)
 
 async def main():
     await registro()

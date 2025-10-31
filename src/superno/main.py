@@ -6,7 +6,7 @@ ipServidor = "127.0.0.1"
 ipLocal = "127.0.0.1"
 listaDeClientes = []
 ListaDeSupernos = []
-superNosVizinhos = None
+superNosVizinhos = []
 portaCoordenador = 8000
 portaSuperno = None
 nunClinteMax = 1
@@ -87,10 +87,11 @@ async def NovoCliente(reader, writer, requisicao_registro):
         listaDeClientes.append(novo_cliente)
         if len(listaDeClientes) == nunClinteMax: #manda pacote finish
             await conectarComOutrosSupernos()
-            for sn in listaDeClientes:
+            for sn in superNosVizinhos:
                 msg = mensagens.cria_pacote_finish()
                 sn["writer"].write(msg.encode('utf-8'))
                 await sn["writer"].drain()
+                print("mandou ")
 
     msgACK = mensagens.cria_ack_resposta_para_cliente(novo_cliente["chave"])
     writer.write(msgACK.encode('utf-8'))
