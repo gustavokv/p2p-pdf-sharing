@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  # --- SUPERNÓ 3 (LAB 5) ---
+  supernode-3:
+    build: .
+    command: ["python3", "src/supernode/main.py", "8003"]
+    ports:
+      - "8003:8003"
+    environment:
+      - HOST_IP=192.168.5.200       # IP deste host (Lab 5)
+      - COORDINATOR_IP=192.168.1.100 # IP do Coordenador (Lab 1)
+      - COORDINATOR_PORT=8000
+    # Não há 'depends_on' pois o coordenador está em outra máquina
+
+  # --- Clientes do Supernó 3 ---
+  client-3.1: &client-sn3
+    build: .
+    command: ["python3", "src/client/main.py"]
+    environment:
+      - HOST_IP=192.168.5.200
+      - SUPERNODE_IP=192.168.5.200
+      - SUPERNODE_PORT=8003
+    depends_on:
+      - supernode-3
+  client-3.2:
+    <<: *client-sn3
+  client-3.3:
+    <<: *client-sn3
+
+  # --- SUPERNÓ 4 (LAB 5) ---
+  supernode-4:
+    build: .
+    command: ["python3", "src/supernode/main.py", "8004"]
+    ports:
+      - "8004:8004"
+    environment:
+      - HOST_IP=192.168.5.200       # IP deste host (Lab 5)
+      - COORDINATOR_IP=192.168.1.100 # IP do Coordenador (Lab 1)
+      - COORDINATOR_PORT=8000
+
+  # --- Clientes do Supernó 4 ---
+  client-4.1: &client-sn4
+    build: .
+    command: ["python3", "src/client/main.py"]
+    environment:
+      - HOST_IP=192.168.5.200
+      - SUPERNODE_IP=192.168.5.200
+      - SUPERNODE_PORT=8004
+    depends_on:
+      - supernode-4
+  client-4.2:
+    <<: *client-sn4
+  client-4.3:
+    <<: *client-sn4

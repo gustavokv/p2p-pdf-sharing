@@ -1,8 +1,13 @@
 import asyncio
 import sys
 import uuid
+import os      
 from src.shared import mensagens
 
+#USAR NO LAB
+#ipLocal = os.environ.get("HOST_IP", "127.0.0.1")         # LÊ DO AMBIENTE
+#ipSuperno = os.environ.get("SUPERNODE_IP", "127.0.0.1") # LÊ DO AMBIENTE
+#porta = int(os.environ.get("SUPERNODE_PORT", 8001))   # LÊ DO AMBIENTE
 
 ipLocal = "127.0.0.1"
 ipSuperno = "127.0.0.1"
@@ -19,8 +24,8 @@ async def registro():
 
     # Gera a chave única e devolve para o super nó
     chave_identificadora = uuid.uuid4().hex #para simular uma chave unica gerada
-    #chave_identificadora = uuid.uuid5(uuid.NAMESPACE_DNS, ipLocal) #quando testarmos com ip no lab
-    print(f"Chave identificadora gerada")
+    #chave_identificadora = uuid.uuid5(uuid.NAMESPACE_DNS, ipLocal) #USAR NO LAB
+    print(f"Chave identificadora gerada: {chave_identificadora}")
 
     msgDeregistro = mensagens.cria_requisicao_registro_cliente(ipLocal, porta, chave_identificadora)
     writer.write(msgDeregistro.encode('utf-8'))

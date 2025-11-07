@@ -4,6 +4,7 @@ import uuid
 from src.shared import mensagens
 
 HOST = "127.0.0.1"
+# HOST = "0.0.0.0" USAR NO LAB
 PORTA = 8000
 
 TOTAL_SUPERNOS = 2

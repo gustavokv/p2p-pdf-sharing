@@ -1,7 +1,13 @@
 import asyncio
 import sys
 import uuid
+import os
 from src.shared import mensagens
+
+#USAR NO LAB
+#ipServidor = os.environ.get("COORDINATOR_IP", "127.0.0.1")  # LÊ DO AMBIENTE
+#ipLocal = os.environ.get("HOST_IP", "127.0.0.1")           # LÊ DO AMBIENTE
+#portaCoordenador = int(os.environ.get("COORDINATOR_PORT", 8000)) # LÊ DO AMBIENTE
 
 ipServidor = "127.0.0.1"
 ipLocal = "127.0.0.1"
@@ -227,6 +233,7 @@ async def main():
     await registro()
 
     servidor = await asyncio.start_server(servidorSuperNo, ipLocal, portaSuperno)
+    #servidor = await asyncio.start_server(servidorSuperNo, "0.0.0.0", portaSuperno) USAR NO LAB
     print(f"Super nó escutando em {ipLocal}:{portaSuperno}")
 
     async with servidor:
