@@ -11,10 +11,11 @@ from src.shared import mensagens
 
 ipServidor = "127.0.0.1"
 ipLocal = "127.0.0.1"
+portaCoordenador = 8000
+
 listaDeClientes = []
 ListaDeSupernos = []
 superNosVizinhos = []
-portaCoordenador = 8000
 portaSuperno = None
 nunClinteMax = 1
 lock = asyncio.Lock()
