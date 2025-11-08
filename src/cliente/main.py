@@ -15,8 +15,8 @@ porta = 8001
 
 
 async def registro():
-    global porta
-    porta = int(sys.argv[1])
+    global porta #REMOVER NO LAB
+    porta = int(sys.argv[1]) #REMOVER NO LAB
 
     #conectar ao superno
     reader, writer = await asyncio.open_connection(ipSuperno, porta)
