@@ -16,11 +16,8 @@ lock_supernos = asyncio.Lock()
 def handle_requisicoes_superno(msg):
     ...
 
+# Função para realizar o broadcast da lista de super nós ativos aos super nós.
 async def broadcast_lista_supernos():
-    """
-    Função para realizar o broadcast da lista de super nós
-    ativos aos super nós.
-    """
     async with lock_supernos:
         if not supernos:
             return
@@ -51,11 +48,11 @@ async def broadcast_lista_supernos():
             await asyncio.gather(*tasks)
             print("Broadcast da lista de super nós realizada com sucesso.")
 
+""" 
+Função assíncrona que irá gerenciar o supernó conectado
+reader e writer são objetos de stream para a comunicação não bloqueante
+"""
 async def superno_handler(reader, writer):
-    """ 
-    Função assíncrona que irá gerenciar o supernó conectado
-    reader e writer são objetos de stream para a comunicação não bloqueante
-    """
     is_registrado = False
     addr = writer.get_extra_info('peername')
     print(f"Supernó {addr} conectado.")
@@ -139,11 +136,8 @@ async def superno_handler(reader, writer):
         writer.close()
         await writer.wait_closed()
 
+# Realiza o broadcast para todos os super nós da rede após todos serem registrados
 async def broadcast_registros_concluidos():
-    """
-    Realiza o broadcast para todos os super nós da rede após todos serem registrados
-    """
-
     print("Todos os super nós foram registrados. Preparando para realizar o broadcast...")
     msg_broadcast = mensagens.cria_confirmacao_registro()
 

@@ -65,9 +65,8 @@ async def registro():
 
     print("Registro finalizado. Conexão ativa.")
 
+# Lida com a requisição de download de arquivo do cliente. 
 async def handle_busca_cliente(cliente_writer, requisicao):
-    """ Lida com a requisição de download de arquivo do cliente. """
-
     filename = requisicao["payload"]["nome_arquivo"]
     print(f"Cliente {cliente_writer.get_extra_info('peername')} está buscando por {filename}.")
 
@@ -95,9 +94,47 @@ async def handle_busca_cliente(cliente_writer, requisicao):
         except Exception as e:
             print(f"Falha ao enviar query para vizinho {vizinho['info']['ip']}: {e}")
 
-async def handle_query_vizinho(vizinho_writer, requisicao):
-    """Lida com uma requisição vinda do super nó vizinho durante a inundação da busca por arquivos. """
+# Lida com um pedido de um cliente para indexar um novo arquivo.
+async def handle_indexar_arquivo(writer, requisicao):
+    nome_arquivo = requisicao["payload"]["nome_arquivo"]
+    
+    info_dono = None
+    async with lock:
+        for cliente in listaDeClientes:
+            if cliente["writer"] == writer:
+                info_dono = {
+                    "ip": cliente["ip"],
+                    "porta": cliente["porta"],
+                    "chave": cliente["chave"]
+                }
+                break
+    
+    if info_dono:
+        # Adiciona o cliente como um dono deste arquivo
+        async with lock:
+            if nome_arquivo not in indice_arquivos_local:
+                indice_arquivos_local[nome_arquivo] = []
+            
+            # Evita adicionar o mesmo dono varias vezes
+            if info_dono not in indice_arquivos_local[nome_arquivo]:
+                indice_arquivos_local[nome_arquivo].append(info_dono)
+                print(f"Arquivo {nome_arquivo} adicionado ao índice pelo cliente {info_dono['chave'][:6]}.")
+            else:
+                print(f"Cliente {info_dono['chave'][:6]} já havia indexado {nome_arquivo}.")
 
+        # Envia um ACK de sucesso para o cliente
+        msg_ack = mensagens.cria_ack_indexacao_arquivo(nome_arquivo, "SUCESSO")
+        writer.write(msg_ack.encode('utf-8'))
+        await writer.drain()
+        
+    else:
+        print(f"Falha na indexação do arquivo do cliente {writer.get_extra_info('peername')}.")
+        msg_ack = mensagens.cria_ack_indexacao_arquivo(nome_arquivo, "FALHA_NAO_REGISTRADO")
+        writer.write(msg_ack.encode('utf-8'))
+        await writer.drain()
+
+# Lida com uma requisição vinda do super nó vizinho durante a inundação da busca por arquivos. 
+async def handle_query_vizinho(vizinho_writer, requisicao):
     filename = requisicao["payload"]["nome_arquivo"]
     chave_identificadora = requisicao["payload"]["chave_identificadora"]
     addr_origem = vizinho_writer.get_extra_info('peername')
@@ -114,9 +151,8 @@ async def handle_query_vizinho(vizinho_writer, requisicao):
         print(f"Arquivo {filename} não encontrado no meu índice.")
     # Se não estiver no arquivo de índice, não responde
 
+# Lida com uma resposta de um vizinho de uma busca da inundação que o super nó atual inciou 
 async def handle_resposta_vizinho(requisicao):
-    """Lida com uma resposta de um vizinho de uma busca da inundação que o super nó atual inciou """
-
     chave_identificadora = requisicao["payload"]["chave_identificadora"]
     info_dono = requisicao["payload"]["info_dono"]
     filename = requisicao["payload"]["nome_arquivo"]
@@ -153,20 +189,23 @@ async def servidorSuperNo(reader, writer):
             comando = novoComando.get('comando')
 
             if comando == mensagens.CMD_CLIENTESN2_REQUISICAO_REGISTRO:
-                """ Caso de requisição de registro vinda de um cliente """
+                # Caso de requisição de registro vinda de um cliente 
                 await NovoCliente(reader, writer, novoComando)
             elif comando == mensagens.CMD_SN2COORD_FINISH:
-                """ Caso de recebimento do pacote finish vinda de um super nó """
+                # Caso de recebimento do pacote finish vinda de um super nó 
                 print(f"superno {addr} finalizou registro de clientes")
             elif comando == mensagens.CMD_CLIENTE2SN_BUSCA_ARQUIVO:
-                """ Caso de busca (solicitação de download) vinda de um cliente. """
+                # Caso de busca (solicitação de download) vinda de um cliente. 
                 await handle_busca_cliente(writer, novoComando)
             elif comando == mensagens.CMD_SN2SN_QUERY_ARQUIVO:
-                """ Caso de requisição vinda de outro super nó para realizar a verificação dos arquivos de índice do super nó atual """
+                # Caso de requisição vinda de outro super nó para realizar a verificação dos arquivos de índice do super nó atual 
                 await handle_query_vizinho(writer, novoComando)
             elif comando == mensagens.CMD_SN2SN_RESPOSTA_ARQUIVO:
-                """ Caso para o super nó que iniciou a inundação lidar com a resposta do super nó que encontrou o arquivo em seu índice. """
+                # Caso para o super nó que iniciou a inundação lidar com a resposta do super nó que encontrou o arquivo em seu índice. 
                 await handle_resposta_vizinho(novoComando)
+            elif comando == mensagens.CMD_CLIENTE2SN_INDEXAR_ARQUIVO:
+                # Caso de um cliente avisando que possui um arquivo
+                await handle_indexar_arquivo(writer, novoComando)
 
     except (ConnectionResetError, asyncio.IncompleteReadError) as error:
         print(f"Conexão com {addr} perdida. Erro: {error}")

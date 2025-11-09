@@ -1,11 +1,11 @@
 import json
 
-""" Comandos para comunicação do coordenador com o super nó """
+# Comandos para comunicação do coordenador com o super nó 
 CMD_COORD2SN_RESPOSTA_REGISTRO = "COORD2SN_RESPOSTA_REGISTRO"
 CMD_COORD2SN_CONFIRMACAO_REGISTRO = "COORD2SN_CONFIRMACAO_REGISTRO"
 CMD_COORD2SN_LISTA_SUPERNOS = "COORD2SN_LISTA_SUPERNOS"
 
-""" Comandos para comunicação do super nó com o coordenador """
+# Comandos para comunicação do super nó com o coordenador 
 CMD_SN2COORD_REQUISICAO_REGISTRO = "SN2COORD_REQUISICAO_REGISTRO"
 CMD_SN2COORD_ACK_REGISTRO = "SN2COORD_ACK_REGISTRO"
 CMD_SN2COORD_FINISH = "SN2COORD_FINISH"
@@ -15,12 +15,14 @@ CMD_SN2CLIENTE_RESPOSTA_REGISTRO = "CMD_SN2CLIENTE_REQUISICAO_REGISTRO"
 CMD_SN2CLIENTE_CONFIRMACAO_REGISTRO = "CMD_SN2CLIENTE_CONFIRMACAO_REGISTRO"
 CMD_SN2CLIENTE_LISTA_CLIENTE = "CMD_SN2CLIENTE_LISTA_CLIENTE"
 CMD_SN2CLIENTE_RESPOSTA_BUSCA = "SN2CLIENTE_RESPOSTA_BUSCA"
+CMD_SN2CLIENTE_ACK_INDEXACAO = "SN2CLIENTE_ACK_INDEXACAO"
 
 #CLIENTE PARA SUPERNO
 CMD_CLIENTESN2_REQUISICAO_REGISTRO = "CMD_CLIENTESN2_REQUISICAO_REGISTRO_E_ENVIO_DE_CHAVE_UNICA"
 CMD_CLIENTESN2_ACK_REGISTRO = "CMD_CLIENTESN2_ACK_REGISTRO"
 CMD_CLIENTESN2_FINISH = "CMD_CLIENTESN2_FINISH"
 CMD_CLIENTE2SN_BUSCA_ARQUIVO = "CLIENTE2SN_BUSCA_ARQUIVO"
+CMD_CLIENTE2SN_INDEXAR_ARQUIVO = "CLIENTE2SN_INDEXAR_ARQUIVO"
 
 # SUPER NO PARA SUPER NO
 CMD_SN2SN_QUERY_ARQUIVO = "SN2SN_QUERY_ARQUIVO"
@@ -40,10 +42,8 @@ def criar_mensagem(comando, **payload):
 
     return json.dumps(mensagem)
 
+# Decodifica uma cadeia de bytes para JSON e devolve um dict
 def decodifica_mensagem(dados_em_bytes):
-    """
-    Decodifica uma cadeia de bytes para JSON e devolve um dict
-    """
 
     if not dados_em_bytes:
         return None
@@ -58,11 +58,11 @@ def decodifica_mensagem(dados_em_bytes):
 # <--- Funções do Coordenador --->
 
 def cria_resposta_coordenador(status, chave_unica):
-    """ Devolve ao super nó uma chave única """
+    #Devolve ao super nó uma chave única 
     return criar_mensagem(CMD_COORD2SN_RESPOSTA_REGISTRO, status=status, chave_unica=chave_unica)
 
 def cria_confirmacao_registro():
-    """ Broadcast para todos os super nós indicando que todos foram registrados """
+    # Broadcast para todos os super nós indicando que todos foram registrados 
     return criar_mensagem(CMD_COORD2SN_CONFIRMACAO_REGISTRO, mensagem="Todos os supernós foram registrados com sucesso.")
 
 def cria_broadcast_lista_supernos(supernos_ativos):
@@ -101,6 +101,9 @@ def cria_mensagem_alive(minha_chave):
 def cria_mensagem_coordenador(minha_chave):
     return criar_mensagem(CMD_SN2SN_NOVO_COORDENADOR, chave_lider=minha_chave)
 
+def cria_ack_indexacao_arquivo(nome_arquivo, status):
+    return criar_mensagem(CMD_SN2CLIENTE_ACK_INDEXACAO, nome_arquivo=nome_arquivo, status=status)
+
 # <--- Funções do cliente --->
 
 def cria_requisicao_registro_cliente(ip, porta, chave_unica):
@@ -108,3 +111,6 @@ def cria_requisicao_registro_cliente(ip, porta, chave_unica):
 
 def cria_requisicao_busca_cliente(nome_arquivo):
     return criar_mensagem(CMD_CLIENTE2SN_BUSCA_ARQUIVO, nome_arquivo=nome_arquivo)
+
+def cria_requisicao_indexar_arquivo(nome_arquivo):
+    return criar_mensagem(CMD_CLIENTE2SN_INDEXAR_ARQUIVO, nome_arquivo=nome_arquivo)
