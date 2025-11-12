@@ -36,10 +36,71 @@ async def registro():
     requisicao_registro = mensagens.decodifica_mensagem(dados)
     print("ACK recebido do supernó:", requisicao_registro)
 
-    await asyncio.sleep(999.0)
+    return chave_identificadora
 
 async def main():
-    await registro()
+    reader = None
+    writer = None
+    chave_identificadora = None
+
+    try:
+        try:
+            reader, writer = await asyncio.open_connection(ipSuperno, porta)
+            print(f"Conectado ao superno em {ipSuperno}:{porta}")
+        except ConnectionRefusedError:
+            print("Conexão recusada. Encerrando.")
+            return
+
+        chave_identificadora = await registro(reader, writer)
+        
+        if not chave_identificadora:
+            print("Falha ao se registrar. Encerrando.")
+            return
+
+        print("Registro concluído do cliente.")
+        
+        # Loop para manter o cliente vivo e escutando
+        while True:
+            dados = await reader.read(4096)
+            if not dados:
+                print("Conexão com Supernó perdida.")
+                break
+            
+            msg = mensagens.decodifica_mensagem(dados)
+            if msg:
+                print(f"Mensagem recebida do Supernó: {msg.get('comando')}")
+
+    except (asyncio.CancelledError, KeyboardInterrupt):
+        print("Sinal de desligamento recebido...")
+    
+    except (ConnectionResetError, asyncio.IncompleteReadError) as e:
+        print(f"Conexão com Supernó perdida abruptamente: {e}")
+
+    finally:
+        # Lógica de Saída 
+        if writer and chave_identificadora:
+            print("Notificando o supernó sobre a saída")
+            try:
+                # Envia a mensagem de saída
+                msg_saida = mensagens.cria_mensagem_saida_cliente(chave_identificadora)
+                writer.write(msg_saida.encode('utf-8'))
+
+                await asyncio.wait_for(writer.drain(), timeout=2.0)
+                print("Notificação enviada.")
+            except Exception as e:
+                print(f"Falha ao notificar supernó: {e}")
+            finally:
+                writer.close()
+                await writer.wait_closed()
+        elif writer:
+            # Se conectou mas não se registrou
+            writer.close()
+            await writer.wait_closed()
+        
+        print("Cliente encerrado.")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Encerrando...")

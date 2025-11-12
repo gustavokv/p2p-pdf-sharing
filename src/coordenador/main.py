@@ -99,7 +99,7 @@ async def superno_handler(reader, writer):
 
             supernos.append(novo_superno)
             is_registrado = True
-            print(f"Novo super nó registrado. Total de super nós registrados: {len(supernos)}.")
+            print(f"Novo supernó registrado. Total de super nós registrados: {len(supernos)}.")
 
             if len(supernos) == TOTAL_SUPERNOS:
                 # create_task para executar o broadcast e não bloquear esta função
@@ -110,16 +110,22 @@ async def superno_handler(reader, writer):
             dados = await reader.read(4096)
 
             if not dados:
-                print(f"Super nó {addr} se desconectou.")
+                print(f"Supernó {addr} se desconectou.")
                 break
 
             msg_recebida = mensagens.decodifica_mensagem(dados)
 
-            if msg_recebida and msg_recebida.get("comando") == mensagens.CMD_SN2COORD_FINISH:
-                print(f"Super nó {addr} finalizou o registro dos clientes: {msg_recebida.get("mensagem")}.")
-            else:
-                # Recebe demais requisições do super nó
-                handle_requisicoes_superno(msg_recebida)
+            if msg_recebida:
+                comando = msg_recebida.get("comando")
+
+                if comando == mensagens.CMD_SN2COORD_FINISH:
+                    print(f"Supernó {addr} finalizou o registro dos clientes.")                
+                elif comando == mensagens.CMD_SN2COORD_SAIDA:
+                    print(f"Supernó {addr} solicitou a saída.")
+                    break 
+                else:
+                    # Recebe demais requisições do super nó
+                    handle_requisicoes_superno(msg_recebida)
 
     except (ConnectionResetError, asyncio.IncompleteReadError) as error:
         print(f"Conexão com {addr} perdida. Erro: {error}")
@@ -129,7 +135,7 @@ async def superno_handler(reader, writer):
         async with lock_supernos:
             if is_registrado:
                 supernos[:] = [sn for sn in supernos if sn["addr"] != addr]
-                print(f"Super nó {addr} removido da lista")
+                print(f"Supernó {addr} removido da lista")
 
             asyncio.create_task(broadcast_lista_supernos())
 
@@ -138,7 +144,7 @@ async def superno_handler(reader, writer):
 
 # Realiza o broadcast para todos os super nós da rede após todos serem registrados
 async def broadcast_registros_concluidos():
-    print("Todos os super nós foram registrados. Preparando para realizar o broadcast...")
+    print("Todos os supernós foram registrados. Preparando para realizar o broadcast...")
     msg_broadcast = mensagens.cria_confirmacao_registro()
 
     async with lock_supernos:
