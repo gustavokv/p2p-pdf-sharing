@@ -17,7 +17,7 @@ listaDeClientes = []
 ListaDeSupernos = []
 superNosVizinhos = []
 portaSuperno = None
-nunClinteMax = 1
+nunClinteMax = 2
 lock = asyncio.Lock()
 Coord = {}
 
@@ -101,6 +101,7 @@ async def handle_indexar_arquivo(writer, requisicao):
     info_dono = None
     async with lock:
         for cliente in listaDeClientes:
+            print(f"{cliente}")
             if cliente["writer"] == writer:
                 info_dono = {
                     "ip": cliente["ip"],
@@ -180,6 +181,8 @@ async def servidorSuperNo(reader, writer):
     try:
         while True:
             dados = await reader.read(4096)
+
+
             
             if not dados:
                 print('Conexão com {addr} fechada.')
@@ -187,6 +190,8 @@ async def servidorSuperNo(reader, writer):
 
             novoComando = mensagens.decodifica_mensagem(dados)
             comando = novoComando.get('comando')
+
+            print(f"{novoComando}")
 
             if comando == mensagens.CMD_CLIENTESN2_REQUISICAO_REGISTRO:
                 # Caso de requisição de registro vinda de um cliente 
