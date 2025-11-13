@@ -2,6 +2,9 @@ import asyncio
 import sys
 import uuid
 import os
+
+from sympy.codegen import Print
+
 from src.shared import mensagens
 
 #USAR NO LAB
@@ -73,7 +76,7 @@ async def handle_busca_cliente(cliente_writer, requisicao):
     if filename in indice_arquivos_local:
         info_dono = indice_arquivos_local[filename][0] # Pega o primeiro dono da lista
         print(f"Arquivo {filename} encontrado no índice local. Dono: {info_dono['ip']}:{info_dono['porta']}")
-        msg_resposta = mensagens.cria_resposta_local_arquivo(filename, info_dono)
+        msg_resposta = mensagens.cria_resposta_local_arquivo(mensagens.CMD_SN2CLIENTE_RESPOSTA_BUSCA_ACHOU,filename, info_dono)
         cliente_writer.write(msg_resposta.encode('utf-8'))
         await cliente_writer.drain()
         return
@@ -91,8 +94,26 @@ async def handle_busca_cliente(cliente_writer, requisicao):
             vizinho["writer"].write(msg_query.encode('utf-8'))
             await vizinho["writer"].drain()
             print(f"Query por {filename} (ID: {chave_identificadora[:6]}) enviada para {vizinho['info']['ip']}:{vizinho['info']['porta']}")
+
+            dados = await vizinho["reader"].read(4096)
+            resposta = mensagens.decodifica_mensagem(dados)
+            comando = resposta.get('comando')
+
+            if comando == mensagens.CMD_SN2SN_RESPOSTA_ARQUIVO_ACHOU:
+                msg_resposta = mensagens.cria_resposta_local_arquivo(mensagens.CMD_SN2CLIENTE_RESPOSTA_BUSCA_ACHOU, filename, resposta["payload"]["info_dono"])
+                cliente_writer.write(msg_resposta.encode('utf-8'))
+                await cliente_writer.drain()
+                return
+
+
         except Exception as e:
             print(f"Falha ao enviar query para vizinho {vizinho['info']['ip']}: {e}")
+
+    print("Arquivo não existe.....")
+    msg_resposta = mensagens.cria_resposta_local_arquivo(mensagens.CMD_SN2CLIENTE_RESPOSTA_BUSCA_NAO_ACHOU, None, None)
+    cliente_writer.write(msg_resposta.encode('utf-8'))
+    await cliente_writer.drain()
+
 
 # Lida com um pedido de um cliente para indexar um novo arquivo.
 async def handle_indexar_arquivo(writer, requisicao):
@@ -141,37 +162,19 @@ async def handle_query_vizinho(vizinho_writer, requisicao):
     addr_origem = vizinho_writer.get_extra_info('peername')
     print(f"Super nó {addr_origem} está buscando por {filename}.")
 
+
     # Verifica o índice local para responder ao vizinho
     if filename in indice_arquivos_local:
         info_dono = indice_arquivos_local[filename][0]
         print(f"Arquivo {filename} encontrado. Devolvendo resposta ao super nó de origem.")
-        msg_resposta = mensagens.cria_resposta_arquivo_sn(filename, chave_identificadora, info_dono)
+        msg_resposta = mensagens.cria_resposta_arquivo_sn(mensagens.CMD_SN2SN_RESPOSTA_ARQUIVO_ACHOU, filename, chave_identificadora, info_dono)
         vizinho_writer.write(msg_resposta.encode('utf-8'))
         await vizinho_writer.drain()
     else:
         print(f"Arquivo {filename} não encontrado no meu índice.")
-    # Se não estiver no arquivo de índice, não responde
-
-# Lida com uma resposta de um vizinho de uma busca da inundação que o super nó atual inciou 
-async def handle_resposta_vizinho(requisicao):
-    chave_identificadora = requisicao["payload"]["chave_identificadora"]
-    info_dono = requisicao["payload"]["info_dono"]
-    filename = requisicao["payload"]["nome_arquivo"]
-    print(f"Resposta recebida para a busca ID {chave_identificadora[:6]}. Arquivo {filename} encontrado em {info_dono['ip']}.")
-
-    # Indica o cliente que estava esperando esta resposta
-    cliente_writer = queries_pendentes.pop(chave_identificadora, None)
-
-    if cliente_writer:
-        try:
-            print(f"Encaminhando localização para o cliente original {cliente_writer.get_extra_info('peername')}.")
-            msg_final = mensagens.cria_resposta_local_arquivo(filename, info_dono)
-            cliente_writer.write(msg_final.encode('utf-8'))
-            await cliente_writer.drain()
-        except Exception as e:
-            print(f"Falha ao encaminhar resposta para o cliente original: {e}")
-    else:
-        print(f"Resposta recebida para uma busca (ID: {chave_identificadora[:6]}) que não está mais pendente.")
+        msg_resposta = mensagens.cria_resposta_arquivo_sn(mensagens.CMD_SN2SN_RESPOSTA_ARQUIVO_NAO_ACHOU, filename, None, None)
+        vizinho_writer.write(msg_resposta.encode('utf-8'))
+        await vizinho_writer.drain()
 
 
 async def servidorSuperNo(reader, writer):
@@ -181,8 +184,6 @@ async def servidorSuperNo(reader, writer):
     try:
         while True:
             dados = await reader.read(4096)
-
-
             
             if not dados:
                 print('Conexão com {addr} fechada.')
@@ -205,9 +206,6 @@ async def servidorSuperNo(reader, writer):
             elif comando == mensagens.CMD_SN2SN_QUERY_ARQUIVO:
                 # Caso de requisição vinda de outro super nó para realizar a verificação dos arquivos de índice do super nó atual 
                 await handle_query_vizinho(writer, novoComando)
-            elif comando == mensagens.CMD_SN2SN_RESPOSTA_ARQUIVO:
-                # Caso para o super nó que iniciou a inundação lidar com a resposta do super nó que encontrou o arquivo em seu índice. 
-                await handle_resposta_vizinho(novoComando)
             elif comando == mensagens.CMD_CLIENTE2SN_INDEXAR_ARQUIVO:
                 # Caso de um cliente avisando que possui um arquivo
                 await handle_indexar_arquivo(writer, novoComando)
@@ -276,6 +274,8 @@ async def conectarComOutrosSupernos():
 async def main():
 
     await registro()
+
+    print(f"porta: {portaSuperno}")
 
     servidor = await asyncio.start_server(servidorSuperNo, ipLocal, portaSuperno)
     #servidor = await asyncio.start_server(servidorSuperNo, "0.0.0.0", portaSuperno) USAR NO LAB

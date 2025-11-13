@@ -14,7 +14,8 @@ CMD_SN2COORD_FINISH = "SN2COORD_FINISH"
 CMD_SN2CLIENTE_RESPOSTA_REGISTRO = "CMD_SN2CLIENTE_REQUISICAO_REGISTRO"
 CMD_SN2CLIENTE_CONFIRMACAO_REGISTRO = "CMD_SN2CLIENTE_CONFIRMACAO_REGISTRO"
 CMD_SN2CLIENTE_LISTA_CLIENTE = "CMD_SN2CLIENTE_LISTA_CLIENTE"
-CMD_SN2CLIENTE_RESPOSTA_BUSCA = "SN2CLIENTE_RESPOSTA_BUSCA"
+CMD_SN2CLIENTE_RESPOSTA_BUSCA_ACHOU = "CMD_SN2CLIENTE_RESPOSTA_BUSCA_ACHOU"
+CMD_SN2CLIENTE_RESPOSTA_BUSCA_NAO_ACHOU = "CMD_SN2CLIENTE_RESPOSTA_BUSCA_NAO_ACHOU"
 CMD_SN2CLIENTE_ACK_INDEXACAO = "SN2CLIENTE_ACK_INDEXACAO"
 
 #CLIENTE PARA SUPERNO
@@ -26,7 +27,8 @@ CMD_CLIENTE2SN_INDEXAR_ARQUIVO = "CLIENTE2SN_INDEXAR_ARQUIVO"
 
 # SUPER NO PARA SUPER NO
 CMD_SN2SN_QUERY_ARQUIVO = "SN2SN_QUERY_ARQUIVO"
-CMD_SN2SN_RESPOSTA_ARQUIVO = "SN2SN_RESPOSTA_ARQUIVO"
+CMD_SN2SN_RESPOSTA_ARQUIVO_ACHOU = "SN2SN_RESPOSTA_ARQUIVO_ACHOU"
+CMD_SN2SN_RESPOSTA_ARQUIVO_NAO_ACHOU = "SN2SN_RESPOSTA_ARQUIVO_NAO_ACHOU"
 CMD_SN2SN_INICIAR_ELEICAO = "SN2SN_INICIAR_ELEICAO"
 CMD_SN2SN_ESTOU_VIVO = "SN2SN_ESTOU_VIVO"
 CMD_SN2SN_NOVO_COORDENADOR = "SN2SN_NOVO_COORDENADOR"
@@ -86,11 +88,11 @@ def cria_ack_resposta_para_cliente(chave_unica):
 def cria_query_arquivo_sn(nome_arquivo, chave_identificadora):
     return criar_mensagem(CMD_SN2SN_QUERY_ARQUIVO, nome_arquivo=nome_arquivo, chave_identificadora=chave_identificadora)
 
-def cria_resposta_arquivo_sn(nome_arquivo, chave_identificadora, info_dono):
-    return criar_mensagem(CMD_SN2SN_RESPOSTA_ARQUIVO, nome_arquivo=nome_arquivo, chave_identificadora=chave_identificadora, info_dono=info_dono)
+def cria_resposta_arquivo_sn(comando, nome_arquivo, chave_identificadora, info_dono):
+    return criar_mensagem(comando, nome_arquivo=nome_arquivo, chave_identificadora=chave_identificadora, info_dono=info_dono)
 
-def cria_resposta_local_arquivo(nome_arquivo, info_dono):
-    return criar_mensagem(CMD_SN2CLIENTE_RESPOSTA_BUSCA, nome_arquivo=nome_arquivo, info_dono=info_dono)
+def cria_resposta_local_arquivo(comando, nome_arquivo, info_dono):
+    return criar_mensagem(comando, nome_arquivo=nome_arquivo, info_dono=info_dono)
 
 def cria_mensagem_eleicao(minha_chave):
     return criar_mensagem(CMD_SN2SN_INICIAR_ELEICAO, chave_remetente=minha_chave)
