@@ -34,12 +34,12 @@ TERMINAL_CMD="gnome-terminal"
 IP_COORD="172.26.1.185" # IP desta máquina (Coordenador)
 
 # Supernós (Hostnames e Portas)
-IP_SN1="l1m19u"; PORT_SN1="8001"
-IP_SN2="l1m25u"; PORT_SN2="8002"
+IP_SN1="l1m27u"; PORT_SN1="8001"
+IP_SN2="l1m30u"; PORT_SN2="8002"
 
 # Clientes (Hostnames)
-CLIENTES_SN1=("l1m21u" "l1m15u" "l1m14u")
-CLIENTES_SN2=("l1m30u" "l1m27u" "l1m13u")
+CLIENTES_SN1=("l1m13u" "l1m14u" "l1m15u")
+CLIENTES_SN2=("l1m19u" "l1m31u" "l1m21u")
 # --- FIM DO MAPA ---
 
 
@@ -85,7 +85,7 @@ CMD_SN1="bash -c \"
     read
 \""
 $TERMINAL_CMD -- bash -c "$CMD_SN1" &
-sleep 1 # Pausa para o terminal abrir
+sleep 20 # Pausa para o terminal abrir
 
 # --- Supernó 2 ---
 echo "  -> Abrindo terminal SSH para Supernó 2 ($IP_SN2)..."
@@ -106,7 +106,7 @@ CMD_SN2="bash -c \"
 $TERMINAL_CMD -- bash -c "$CMD_SN2" &
 
 echo "Comandos dos supernós enviados. Aguardando 10 segundos para se registrarem..."
-sleep 10
+sleep 20
 
 # 3. Iniciar os Clientes (Remotamente, em terminais locais)
 echo -e "\n[FASE 3/3] Iniciando 6 Clientes remotamente (monitorados)..."
@@ -130,7 +130,7 @@ for ip in "${CLIENTES_SN1[@]}"; do
         read
     \""
     $TERMINAL_CMD -- bash -c "$CMD_TO_RUN" &
-    sleep 1 # Pequena pausa para os terminais abrirem
+    sleep 10 # Pequena pausa para os terminais abrirem
 done
 
 echo "  Iniciando clientes do Supernó 2 ($IP_SN2)..."
@@ -152,7 +152,7 @@ for ip in "${CLIENTES_SN2[@]}"; do
         read
     \""
     $TERMINAL_CMD -- bash -c "$CMD_TO_RUN" &
-    sleep 1
+    sleep 10
 done
 
 echo -e "\n============================================="

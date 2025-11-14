@@ -3,11 +3,11 @@ import json
 import uuid
 from src.shared import mensagens
 
-HOST = "127.0.0.1"
-#HOST = "0.0.0.0"
+#HOST = "127.0.0.1"
+HOST = "0.0.0.0"
 PORTA = 8000
 
-TOTAL_SUPERNOS = 2
+TOTAL_SUPERNOS = 4
 supernos = []
 
 # Evento para sinalizar quando os nós estão prontos
@@ -39,10 +39,10 @@ async def broadcast_lista_supernos():
         tasks = []
         for sn in supernos:
             try:
-                sn["writer"].write(msg_broadcast.encode('utf-8'))
+                sn["writer"].write(msg_broadcast.encode('utf-8') + b'\n')
                 tasks.append(sn["writer"].drain())
             except Exception as e:
-                print(f"Falha ao adicionar mensagem na fila para {sn["addr"]}: {e}")
+                print(f"Falha ao adicionar mensagem na fila para {sn['addr']}: {e}")
 
         if tasks:
             await asyncio.gather(*tasks)
@@ -73,7 +73,7 @@ async def superno_handler(reader, writer):
     finally:
         async with lock_supernos:
             if is_registrado:
-                supernos[:] = [sn for sn in supernos if sn["addr"] != addr]
+                supernos[:] = [sn for sn in supernos if sn['addr'] != addr]
                 print(f"Super nó {addr} removido da lista")
 
             #asyncio.create_task(broadcast_lista_supernos())
@@ -82,7 +82,11 @@ async def superno_handler(reader, writer):
         await writer.wait_closed()
 
 async def coordenador (reader, writer, addr):
-    dados = await reader.read(4096)
+    dados = await reader.readuntil(b'\n')
+
+    if not dados:
+        print(f"Super nó {addr} se desconectou.")
+        return True
 
     msg_recebida = mensagens.decodifica_mensagem(dados)
 
@@ -106,7 +110,7 @@ async def coordenador (reader, writer, addr):
 
 async def configInicial(reader, writer, addr):
     # Espera pela solicitação de registro no coordenador
-    dados = await reader.read(4096)
+    dados = await reader.readuntil(b'\n')
     requisicao_registro = mensagens.decodifica_mensagem(dados)
 
     if not requisicao_registro or requisicao_registro.get("comando") != mensagens.CMD_SN2COORD_REQUISICAO_REGISTRO:
@@ -118,11 +122,11 @@ async def configInicial(reader, writer, addr):
     print(f"Registrando supernó {addr} com a chave única: {chave_unica}.")
 
     msg_resposta = mensagens.cria_resposta_coordenador("SUCESSO", chave_unica)
-    writer.write(msg_resposta.encode('utf-8'))
+    writer.write(msg_resposta.encode('utf-8') + b'\n')
     await writer.drain()
-
+    
     # Aguarda ACK do super nó
-    dados = await reader.read(4096)
+    dados = await reader.readuntil(b'\n')
     msg_ack = mensagens.decodifica_mensagem(dados)
 
     if not msg_ack or msg_ack.get("comando") != mensagens.CMD_SN2COORD_ACK_REGISTRO:
@@ -142,7 +146,7 @@ async def configInicial(reader, writer, addr):
             "chave": chave_unica,
             "ip": requisicao_registro["payload"]["endereco_ip"],
             "porta": requisicao_registro["payload"]["porta"]
-        }
+        } 
 
         supernos.append(novo_superno)
         is_registrado = True
@@ -161,22 +165,60 @@ async def broadcast_registros_concluidos():
     async with lock_supernos:
         tasks = [] # Lista de tarefas para enviar a mensagem a todos os super nós
         for sn in supernos:
-            sn["writer"].write(msg_broadcast.encode('utf-8'))
+            sn["writer"].write(msg_broadcast.encode('utf-8') + b'\n')
             tasks.append(sn["writer"].drain())
-            print(f"Mensagem de broadcast adicionada para {sn["addr"]}")
+            print(f"Mensagem de broadcast adicionada para {sn['addr']}")
 
         # Executa todas as tarefas de envio aos super nós concorrentemente
         await asyncio.gather(*tasks)
     print("Broadcast aos super nós concluído.")
 
+async def cliente_solicitacao_lista_supernos(reader, writer):
+    """
+    Handler para novos clientes pedirem a lista de supernós
+    Roda em uma porta diferente (7999)
+    """
+    addr = writer.get_extra_info('peername')
+    print(f"Novo cliente {addr} pedindo lista de supernós.")
+    
+    try:
+        await reader.readuntil(b'\n')
+        
+        async with lock_supernos:
+             # Re-usa a mesma função de broadcast, mas para um só cliente
+            supernos_para_enviar = [
+                {"ip": sn["ip"], "porta": sn["porta"]} 
+                for sn in supernos
+            ]
+            msg_lista = mensagens.cria_broadcast_lista_supernos(supernos_para_enviar)
+        
+        writer.write(msg_lista.encode('utf-8') + b'\n')
+        await writer.drain()
+
+    except Exception as e:
+        print(f"Erro ao enviar lista para novo cliente {addr}: {e}")
+    finally:
+        writer.close()
+        await writer.wait_closed()
+
 async def main():
     print("Nó COORDENADOR está sendo iniciado...")
-    servidor = await asyncio.start_server(superno_handler, HOST, PORTA)
-    addr = servidor.sockets[0].getsockname()
-    print(f"Coordenador escutando em: {addr[0]}:{addr[1]}")
 
-    async with servidor:
-        await servidor.serve_forever()
+    servidor_sn = await asyncio.start_server(superno_handler, HOST, PORTA)
+    addr_sn = servidor_sn.sockets[0].getsockname()
+    print(f"Coordenador (para Supernós) escutando em: {addr_sn[0]}:{addr_sn[1]}")
+
+    porta_bootstrap = PORTA - 1 # Ex: 7999
+    servidor_cli = await asyncio.start_server(cliente_solicitacao_lista_supernos, HOST, porta_bootstrap)
+    addr_cli = servidor_cli.sockets[0].getsockname()
+    print(f"Coordenador (para Clientes) escutando em: {addr_cli[0]}:{addr_cli[1]}")
+
+    # Roda ambos os servidores
+    async with servidor_sn, servidor_cli:
+        await asyncio.gather(
+            servidor_sn.serve_forever(),
+            servidor_cli.serve_forever()
+        )
 
 if __name__ == "__main__":
     try:

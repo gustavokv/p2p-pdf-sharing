@@ -8,7 +8,7 @@ clear
 # Define o caminho para a raiz do seu projeto.
 # Este script assume que você o está executando de dentro da pasta do projeto.
 PROJECT_DIR=$(pwd)
-PYTHON_CMD="python3"
+PYTHON_CMD="python3 -u"
 
 # --- Validação Inicial ---
 if [ -z "$1" ]; then
@@ -26,7 +26,7 @@ if [ "$ROLE" == "coordenador" ]; then
     echo "================================="
     
     cd "$PROJECT_DIR"
-    $PYTHON_CMD src/coordenador/main.py
+    $PYTHON_CMD -m src.coordenador.main
 
 # --- LÓGICA DO SUPERNÓ ---
 elif [ "$ROLE" == "superno" ]; then
@@ -53,32 +53,48 @@ elif [ "$ROLE" == "superno" ]; then
     echo "---------------------------------"
     
     cd "$PROJECT_DIR"
-    $PYTHON_CMD src/supernode/main.py $MY_PORT
+    $PYTHON_CMD -m src.superno.main $MY_PORT
 
 # --- LÓGICA DO CLIENTE ---
 elif [ "$ROLE" == "cliente" ]; then
-    if [ $# -ne 4 ]; then
-        echo "ERRO: O papel 'cliente' requer 3 argumentos."
-        echo "Uso: ./iniciar-no.sh cliente <IP_DESTA_MAQUINA> <IP_DO_SUPERNODE> <PORTA_DO_SUPERNODE>"
-        echo "Exemplo: ./iniciar-no.sh cliente 192.168.1.150 192.168.1.101 8001"
+    # Permite 3 argumentos (dinâmico) ou 4 (estático)
+    if [ $# -ne 3 ] && [ $# -ne 4 ]; then
+        echo "ERRO: O papel 'cliente' requer 2 ou 3 argumentos."
+        echo "Uso (Estático):  ./iniciar-no.sh cliente <MEU_IP> <IP_SUPERNODE> <PORTA_SUPERNODE>"
+        echo "Uso (Dinâmico): ./iniciar-no.sh cliente <MEU_IP> <IP_DO_COORDENADOR>"
         exit 1
     fi
 
     # Define as variáveis de ambiente para o script Python
     export HOST_IP=$2
-    export SUPERNODE_IP=$3
-    export SUPERNODE_PORT=$4
-
-    echo "================================="
-    echo "Iniciando Nó: CLIENTE"
-    echo "================================="
-    echo "  -> Meu IP (Host):   $HOST_IP"
-    echo "  -> IP Supernó:     $SUPERNODE_IP"
-    echo "  -> Porta Supernó:  $SUPERNODE_PORT"
-    echo "---------------------------------"
+    
+    if [ $# -eq 4 ]; then
+        # --- MODO ESTÁTICO (para deploy.sh) ---
+        export SUPERNODE_IP=$3
+        export SUPERNODE_PORT=$4
+        echo "================================="
+        echo "Iniciando Nó: CLIENTE (Estático)"
+        echo "================================="
+        echo "  -> Meu IP (Host):   $HOST_IP"
+        echo "  -> IP Supernó:     $SUPERNODE_IP"
+        echo "  -> Porta Supernó:  $SUPERNODE_PORT"
+        echo "---------------------------------"
+    else
+        # --- MODO DINÂMICO (para novos clientes) ---
+        export COORDINATOR_IP=$3
+        unset SUPERNODE_IP
+        unset SUPERNODE_PORT
+        echo "================================="
+        echo "Iniciando Nó: CLIENTE (Dinâmico)"
+        echo "================================="
+        echo "  -> Meu IP (Host):   $HOST_IP"
+        echo "  -> IP Coordenador: $COORDINATOR_IP" 
+        echo "  -> IP Supernó:     (Será descoberto)"
+        echo "---------------------------------"
+    fi
     
     cd "$PROJECT_DIR"
-    $PYTHON_CMD src/client/main.py
+    $PYTHON_CMD -m src.cliente.main
 
 else
     echo "ERRO: Papel '$ROLE' desconhecido."
