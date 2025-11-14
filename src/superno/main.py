@@ -6,6 +6,7 @@ import os
 from sympy.codegen import Print
 
 from src.shared import mensagens
+from src.coordenador import main
 
 #USAR NO LAB
 #ipServidor = os.environ.get("COORDINATOR_IP", "127.0.0.1")  # LÊ DO AMBIENTE
@@ -23,6 +24,8 @@ portaSuperno = None
 nunClinteMax = 2
 lock = asyncio.Lock()
 Coord = {}
+isCoordenador = False
+
 
 # Lista dos arquivos pertencentes a cada cliente. Mapeia o nome do arquivo para seus "donos"
 indice_arquivos_local = {} 
@@ -182,38 +185,51 @@ async def servidorSuperNo(reader, writer):
     print(f"Cliente {addr} conectado.")
 
     try:
-        while True:
-            dados = await reader.read(4096)
-            
-            if not dados:
-                print('Conexão com {addr} fechada.')
-                break
-
-            novoComando = mensagens.decodifica_mensagem(dados)
-            comando = novoComando.get('comando')
-
-            print(f"{novoComando}")
-
-            if comando == mensagens.CMD_CLIENTESN2_REQUISICAO_REGISTRO:
-                # Caso de requisição de registro vinda de um cliente 
-                await NovoCliente(reader, writer, novoComando)
-            elif comando == mensagens.CMD_SN2COORD_FINISH:
-                # Caso de recebimento do pacote finish vinda de um super nó 
-                print(f"superno {addr} finalizou registro de clientes")
-            elif comando == mensagens.CMD_CLIENTE2SN_BUSCA_ARQUIVO:
-                # Caso de busca (solicitação de download) vinda de um cliente. 
-                await handle_busca_cliente(writer, novoComando)
-            elif comando == mensagens.CMD_SN2SN_QUERY_ARQUIVO:
-                # Caso de requisição vinda de outro super nó para realizar a verificação dos arquivos de índice do super nó atual 
-                await handle_query_vizinho(writer, novoComando)
-            elif comando == mensagens.CMD_CLIENTE2SN_INDEXAR_ARQUIVO:
-                # Caso de um cliente avisando que possui um arquivo
-                await handle_indexar_arquivo(writer, novoComando)
+        isConectado=True
+        while True and isConectado:
+            if not isCoordenador:
+                isConectado = await superno(reader, writer, addr)
+            else:
+                ...
+                #coordenador()
 
     except (ConnectionResetError, asyncio.IncompleteReadError) as error:
         print(f"Conexão com {addr} perdida. Erro: {error}")
     except Exception as error:
         print(f"Erro inesperado com {addr}. Erro: {error}")
+
+async def superno(reader, writer, addr):
+    dados = await reader.read(4096)
+
+    if not dados:
+        print('Conexão com {addr} fechada.')
+        return False # falso caso não se tenha conexão
+
+    novoComando = mensagens.decodifica_mensagem(dados)
+    comando = novoComando.get('comando')
+
+    print(f"{novoComando}")
+
+    if comando == mensagens.CMD_CLIENTESN2_REQUISICAO_REGISTRO:
+        # Caso de requisição de registro vinda de um cliente
+        await NovoCliente(reader, writer, novoComando)
+    elif comando == mensagens.CMD_SN2COORD_FINISH:
+        # Caso de recebimento do pacote finish vinda de um super nó
+        print(f"superno {addr} finalizou registro de clientes")
+    elif comando == mensagens.CMD_CLIENTE2SN_BUSCA_ARQUIVO:
+        # Caso de busca (solicitação de download) vinda de um cliente.
+        await handle_busca_cliente(writer, novoComando)
+    elif comando == mensagens.CMD_SN2SN_QUERY_ARQUIVO:
+        # Caso de requisição vinda de outro super nó para realizar a verificação dos arquivos de índice do super nó atual
+        await handle_query_vizinho(writer, novoComando)
+    elif comando == mensagens.CMD_CLIENTE2SN_INDEXAR_ARQUIVO:
+        # Caso de um cliente avisando que possui um arquivo
+        await handle_indexar_arquivo(writer, novoComando)
+
+    return True #caso tenha conexão
+
+async def coordenador():
+    ...
 
 async def NovoCliente(reader, writer, requisicao_registro):
     novo_cliente = {
