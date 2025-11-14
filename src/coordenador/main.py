@@ -100,7 +100,8 @@ async def coordenador (reader, writer, addr):
             return True
         elif comando == mensagens.CMD_SN2COORD_PERGUNTA_ESTOU_VIVO:
             resposta = mensagens.cria_resposta_estou_vivo()
-            writer.write(resposta.encode('utf-8'))
+            writer.write(resposta.encode('utf-8') + b'\n')
+            await writer.drain()
             print(f"Resposta enviada. Máquina: {addr}")
         else:
             # Recebe demais requisições do super nó
