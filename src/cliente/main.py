@@ -73,7 +73,7 @@ async def medir_latencia(ip, porta):
 
 async def registro():
     global chave_identificadora, reader, writer, ipLocal, ipSuperno, porta
-    porta = int(sys.argv[1])  # REMOVER NO LAB
+    #porta = int(sys.argv[1])  REMOVER NO LAB
 
     try:
         reader, writer = await asyncio.open_connection(ipSuperno, porta)

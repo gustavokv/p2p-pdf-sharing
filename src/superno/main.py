@@ -68,7 +68,7 @@ async def registro():
     Coord["reader"] = reader
     Coord["writer"] = writer
 
-    asyncio.create_task(monitorar_lider())
+    #asyncio.create_task(monitorar_lider())
 
     print("Registro finalizado. Conexão ativa.")
 
@@ -218,10 +218,11 @@ async def handle_saida_cliente(writer, requisicao):
     except Exception as e:
         print(f"Erro ao fechar conexão com cliente saindo: {e}")
 
+"""
 async def ouvir_coordenador():
-    """
+    
     Tarefa dedicada a ouvir mensagens do Coordenador
-    """
+    
     reader = Coord.get("reader")
     if not reader:
         print("Conexão com Coordenador não encontrada para escuta.")
@@ -257,6 +258,7 @@ async def ouvir_coordenador():
         print(f"Erro inesperado no ouvinte do coordenador: {e}")
     finally:
         print("Ouvinte do coordenador encerrado.")
+"""
 
 async def servidorSuperNo(reader, writer):
     addr = writer.get_extra_info('peername')
@@ -430,49 +432,71 @@ async def conectarComOutrosSupernos():
 
 
 async def monitorar_lider():
-    """Verifica periodicamente se o líder está vivo."""
+    """
+    Verifica periodicamente se o líder está vivo E
+    processa mensagens de broadcast dele.
+    Esta é a ÚNICA tarefa que lê de 'Coord["reader"]'.
+    """
+    reader = Coord.get("reader")
+    writer = Coord.get("writer")
+    
+    if not reader or not writer:
+        print("[ERRO] Conexão com Coordenador não encontrada para monitorar.")
+        return
+
+    print("Monitor do Coordenador iniciado (ping/listen).")
+    
     while True:
-        # 1. Dorme pelo intervalo de verificação (ex: 5 segundos)
-        await asyncio.sleep(5)
-
-        if not isCoordenador:  # Não precisa monitorar a si mesmo
-            try:
-                print("Monitorando líder: ARE YOU ALIVE?")
-
-                # 2. Envia a mensagem de "ping"
-                msg_ping = mensagens.cria_mensagem_alive()  # Crie esta função
-                Coord["writer"].write(msg_ping.encode('utf-8'))
-                await Coord["writer"].drain()
-
-                # 3. Usa wait_for para esperar a resposta ("pong")
-                #    com um timeout curto (ex: 3 segundos)
-                dados = await asyncio.wait_for(Coord["reader"].read(4096), timeout=3.0)
-
-                if not dados:
-                    raise ConnectionError("Líder fechou a conexão")
-
-                # 4. Decodifica e verifica se é a resposta certa
-                resposta = mensagens.decodifica_mensagem(dados)
-                if resposta.get('comando') == mensagens.CMD_COORD2SN_RESPOSTA_ESTOU_VIVO:
-                    print(f"Monitorando líder: ...Líder está VIVO. Lider: {resposta["payload"]}")
-
-            except asyncio.TimeoutError:
-                # 5. O LÍDER ESTÁ MORTO!
-                print("!!! O LÍDER MORREU (timeout) !!!")
-                # Pare de monitorar este líder
-                # Feche a conexão
-                # Chame a eleição
-                # await iniciar_eleicao()
-                break  # Sai do loop de monitoramento
-
-            except (ConnectionError, ConnectionResetError) as e:
-                # 6. O LÍDER TAMBÉM ESTÁ MORTO! (Conexão caiu)
-                print(f"!!! O LÍDER MORREU (conexão perdida: {e}) !!!")
-                # Chame a eleição
-                # await iniciar_eleicao()
-                break  # Sai do loop
-        else:
+        if isCoordenador: # Se eu sou o coordenador, não faço nada disso.
             break
+            
+        try:
+            # 1. Envia um PING
+            # (Você precisará de 'cria_ping_coordenador' e a resposta no coordenador)
+            msg_ping = mensagens.cria_mensagem_alive()
+            writer.write(msg_ping.encode('utf-8') + b'\n') # Use '\n'
+            await writer.drain()
+
+            # 2. Espera por QUALQUER mensagem (seja um PONG ou um BROADCAST)
+            #    com um timeout. Se nada chegar, o líder morreu.
+            dados = await asyncio.wait_for(reader.readuntil(b'\n'), timeout=10.0) # 10s timeout
+            
+            if not dados:
+                raise ConnectionError("Líder fechou a conexão")
+
+            # 3. Processa a mensagem que chegou
+            msg = mensagens.decodifica_mensagem(dados)
+            if not msg:
+                continue
+
+            comando = msg.get("comando")
+
+            # --- Lógica do 'monitorar_lider' (original) ---
+            if comando == mensagens.CMD_COORD2SN_RESPOSTA_ESTOU_VIVO: # O "pong"
+                print(f"Monitorando líder: ...Líder está VIVO.")
+            
+            # --- Lógica do 'ouvir_coordenador' (movida para cá) ---
+            elif comando == mensagens.CMD_COORD2SN_LISTA_SUPERNOS:
+                async with lock:
+                    global ListaDeSupernos
+                    ListaDeSupernos = msg["payload"]["supernos"]
+                print(f"Monitorando líder: [BROADCAST] Lista de Supernós atualizada: {len(ListaDeSupernos)} nós.")
+            
+            else:
+                print(f"Monitorando líder: [MSG] Recebida msg inesperada: {comando}")
+
+        except asyncio.TimeoutError:
+            print("!!! O LÍDER MORREU (timeout de 10s no heartbeat) !!!")
+            # await iniciar_eleicao()
+            break # Sai do loop
+
+        except (ConnectionError, ConnectionResetError, asyncio.IncompleteReadError) as e:
+            print(f"!!! O LÍDER MORREU (conexão perdida: {e}) !!!")
+            # await iniciar_eleicao()
+            break # Sai do loop
+        
+        # Espera 5 segundos antes de enviar o próximo ping
+        await asyncio.sleep(5)
 
 async def main():
     # Esta tarefa manterá o servidor de clientes/supernós rodando
@@ -487,7 +511,7 @@ async def main():
 
         # Inicia a tarefa do servidor
         server_task = asyncio.create_task(servidor.serve_forever())
-        coordinator_listener_task = asyncio.create_task(ouvir_coordenador())
+        coordinator_listener_task = asyncio.create_task(monitorar_lider())
 
         await asyncio.gather(server_task, coordinator_listener_task)
 
