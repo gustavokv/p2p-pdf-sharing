@@ -9,6 +9,7 @@ CMD_COORD2SN_LISTA_SUPERNOS = "COORD2SN_LISTA_SUPERNOS"
 CMD_SN2COORD_REQUISICAO_REGISTRO = "SN2COORD_REQUISICAO_REGISTRO"
 CMD_SN2COORD_ACK_REGISTRO = "SN2COORD_ACK_REGISTRO"
 CMD_SN2COORD_FINISH = "SN2COORD_FINISH"
+CMD_SN2COORD_SAIDA = "SN2COORD_SAIDA"
 
 #SUPERNO PARA CLIENTE
 CMD_SN2CLIENTE_RESPOSTA_REGISTRO = "CMD_SN2CLIENTE_REQUISICAO_REGISTRO"
@@ -24,6 +25,7 @@ CMD_CLIENTESN2_ACK_REGISTRO = "CMD_CLIENTESN2_ACK_REGISTRO"
 CMD_CLIENTESN2_FINISH = "CMD_CLIENTESN2_FINISH"
 CMD_CLIENTE2SN_BUSCA_ARQUIVO = "CLIENTE2SN_BUSCA_ARQUIVO"
 CMD_CLIENTE2SN_INDEXAR_ARQUIVO = "CLIENTE2SN_INDEXAR_ARQUIVO"
+CMD_CLIENTE2SN_SAIDA = "CLIENTE2SN_SAIDA"
 
 # SUPER NO PARA SUPER NO
 CMD_SN2SN_QUERY_ARQUIVO = "SN2SN_QUERY_ARQUIVO"
@@ -106,6 +108,9 @@ def cria_mensagem_coordenador(minha_chave):
 def cria_ack_indexacao_arquivo(nome_arquivo, status):
     return criar_mensagem(CMD_SN2CLIENTE_ACK_INDEXACAO, nome_arquivo=nome_arquivo, status=status)
 
+def cria_mensagem_saida_superno(chave_superno):
+    return criar_mensagem(CMD_SN2COORD_SAIDA, chave_superno=chave_superno)
+
 # <--- Funções do cliente --->
 
 def cria_requisicao_registro_cliente(ip, porta, chave_unica):
@@ -116,3 +121,6 @@ def cria_requisicao_busca_cliente(nome_arquivo):
 
 def cria_requisicao_indexar_arquivo(nome_arquivo):
     return criar_mensagem(CMD_CLIENTE2SN_INDEXAR_ARQUIVO, nome_arquivo=nome_arquivo)
+
+def cria_mensagem_saida_cliente(chave_cliente):
+    return criar_mensagem(CMD_CLIENTE2SN_SAIDA, chave_cliente=chave_cliente)

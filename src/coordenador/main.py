@@ -4,7 +4,7 @@ import uuid
 from src.shared import mensagens
 
 HOST = "127.0.0.1"
-#HOST = "0.0.0.0" USAR NO LAB
+#HOST = "0.0.0.0"
 PORTA = 8000
 
 TOTAL_SUPERNOS = 2
@@ -115,11 +115,17 @@ async def superno_handler(reader, writer):
 
             msg_recebida = mensagens.decodifica_mensagem(dados)
 
-            if msg_recebida and msg_recebida.get("comando") == mensagens.CMD_SN2COORD_FINISH:
-                print(f"Super nó {addr} finalizou o registro dos clientes: {msg_recebida.get("mensagem")}.")
-            else:
-                # Recebe demais requisições do super nó
-                handle_requisicoes_superno(msg_recebida)
+            if msg_recebida:
+                comando = msg_recebida.get("comando")
+
+                if comando == mensagens.CMD_SN2COORD_FINISH:
+                    print(f"Supernó {addr} finalizou o registro dos clientes.")                
+                elif comando == mensagens.CMD_SN2COORD_SAIDA:
+                    print(f"Supernó {addr} solicitou a saída.")
+                    break 
+                else:
+                    # Recebe demais requisições do super nó
+                    handle_requisicoes_superno(msg_recebida)
 
     except (ConnectionResetError, asyncio.IncompleteReadError) as error:
         print(f"Conexão com {addr} perdida. Erro: {error}")

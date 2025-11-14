@@ -8,9 +8,9 @@ from sympy.codegen import Print
 from src.shared import mensagens
 
 #USAR NO LAB
-#ipServidor = os.environ.get("COORDINATOR_IP", "127.0.0.1")  # LÊ DO AMBIENTE
-#ipLocal = os.environ.get("HOST_IP", "127.0.0.1")           # LÊ DO AMBIENTE
-#portaCoordenador = int(os.environ.get("COORDINATOR_PORT", 8000)) # LÊ DO AMBIENTE
+#ipServidor = os.environ.get("COORDINATOR_IP", "127.0.0.1")  
+#ipLocal = os.environ.get("HOST_IP", "127.0.0.1")           
+#portaCoordenador = int(os.environ.get("COORDINATOR_PORT", 8000)) 
 
 ipServidor = "127.0.0.1"
 ipLocal = "127.0.0.1"
@@ -23,11 +23,12 @@ portaSuperno = None
 nunClinteMax = 2
 lock = asyncio.Lock()
 Coord = {}
+minha_chave_global = None
 
 # Lista dos arquivos pertencentes a cada cliente. Mapeia o nome do arquivo para seus "donos"
 indice_arquivos_local = {} 
 # Rastreia buscas enviadas para outros super nós
-queries_pendentes = {}
+#queries_pendentes = {}
 
 async def registro():
     reader, writer = await asyncio.open_connection(ipServidor, portaCoordenador)
@@ -44,10 +45,10 @@ async def registro():
 
     dados = await reader.read(4096)
     resposta = mensagens.decodifica_mensagem(dados)
-    chave = resposta.get("payload", {}).get("chave_unica")
-    print(f"Chave recebida: {chave}")
+    minha_chave_global = resposta.get("payload", {}).get("chave_unica")
+    print(f"Chave recebida: {minha_chave_global}")
 
-    msg_ack = mensagens.cria_ack_resposta_para_coord(chave)
+    msg_ack = mensagens.cria_ack_resposta_para_coord(minha_chave_global)
     writer.write(msg_ack.encode('utf-8'))
     await writer.drain()
     print("ACK enviado ao coordenador.")
@@ -84,7 +85,7 @@ async def handle_busca_cliente(cliente_writer, requisicao):
     # Se não tiver no índice local, faz a inundação
     print(f"{filename} não encontrado localmente. Inundando a rede...")
     chave_identificadora = str(uuid.uuid4()) # Neste caso, utiliza o uuid4 somente para armazenar localmente na fila de queries o cliente
-    queries_pendentes[chave_identificadora] = cliente_writer # Guarda quem solicitou download
+    #queries_pendentes[chave_identificadora] = cliente_writer # Guarda quem solicitou download
 
     msg_query = mensagens.cria_query_arquivo_sn(filename, chave_identificadora)
     
@@ -176,6 +177,44 @@ async def handle_query_vizinho(vizinho_writer, requisicao):
         vizinho_writer.write(msg_resposta.encode('utf-8'))
         await vizinho_writer.drain()
 
+# Lida com a solicitação de saída de um cliente.
+async def handle_saida_cliente(writer, requisicao):
+    chave_cliente_saindo = requisicao["payload"]["chave_cliente"]
+    print(f"[Cliente {chave_cliente_saindo[:6]} solicitou saída.")
+
+    async with lock:
+        cliente_encontrado = None
+        for cliente in listaDeClientes:
+            if cliente["chave"] == chave_cliente_saindo:
+                cliente_encontrado = cliente
+                break
+        
+        if cliente_encontrado:
+            listaDeClientes.remove(cliente_encontrado)
+            print(f"Cliente {chave_cliente_saindo[:6]} removido da lista de clientes.")
+        else:
+            print(f"Cliente {chave_cliente_saindo[:6]} não estava na lista de clientes.")
+
+        arquivos_para_limpar = []
+        for nome_arquivo, donos in indice_arquivos_local.items():
+            # Filtra a lista de donos, mantendo apenas quem não é o cliente que está saindo
+            donos[:] = [dono for dono in donos if dono["chave"] != chave_cliente_saindo]
+            
+            # Se a lista de donos ficar vazia, da append no arquivo para remoção
+            if not donos:
+                arquivos_para_limpar.append(nome_arquivo)
+
+        for nome_arquivo in arquivos_para_limpar:
+            del indice_arquivos_local[nome_arquivo]
+            print(f"Arquivo '{nome_arquivo}' removido do índice (sem donos).")
+            
+    try:
+        writer.close()
+        await writer.wait_closed()
+        print(f"Conexão com {chave_cliente_saindo[:6]} fechada.")
+    except Exception as e:
+        print(f"Erro ao fechar conexão com cliente saindo: {e}")
+
 
 async def servidorSuperNo(reader, writer):
     addr = writer.get_extra_info('peername')
@@ -209,6 +248,10 @@ async def servidorSuperNo(reader, writer):
             elif comando == mensagens.CMD_CLIENTE2SN_INDEXAR_ARQUIVO:
                 # Caso de um cliente avisando que possui um arquivo
                 await handle_indexar_arquivo(writer, novoComando)
+            elif comando == mensagens.CMD_CLIENTE2SN_SAIDA:
+                # Caso de um cliente avisando que está saindo
+                await handle_saida_cliente(writer, novoComando)
+                break
 
     except (ConnectionResetError, asyncio.IncompleteReadError) as error:
         print(f"Conexão com {addr} perdida. Erro: {error}")
@@ -272,17 +315,46 @@ async def conectarComOutrosSupernos():
 
 
 async def main():
+    # Esta tarefa manterá o servidor de clientes/supernós rodando
+    server_task = None
 
-    await registro()
+    try:
+        await registro()
 
-    print(f"porta: {portaSuperno}")
+        servidor = await asyncio.start_server(servidorSuperNo, "0.0.0.0", portaSuperno)
+        print(f"Super nó escutando em 0.0.0.0:{portaSuperno} (Registrado com IP {ipLocal})")
 
-    servidor = await asyncio.start_server(servidorSuperNo, ipLocal, portaSuperno)
-    #servidor = await asyncio.start_server(servidorSuperNo, "0.0.0.0", portaSuperno) USAR NO LAB
-    print(f"Super nó escutando em {ipLocal}:{portaSuperno}")
+        # Inicia a tarefa do servidor
+        server_task = asyncio.create_task(servidor.serve_forever())
+        await server_task
 
-    async with servidor:
-        await servidor.serve_forever()
+    except asyncio.CancelledError:
+        print("Recebido sinal de cancelamento.")
+    finally:
+        print("Iniciando encerramento...")
+        
+        # Para o servidor de escuta
+        if server_task:
+            server_task.cancel()
+        
+        # Avisa o coordenador
+        coord_writer = Coord.get("writer")
+        if coord_writer:
+            try:
+                print("Notificando o Coordenador sobre a saída...")
+                msg_saida = mensagens.cria_mensagem_saida_superno(minha_chave_global)
+                coord_writer.write(msg_saida.encode('utf-8'))
+                await coord_writer.drain()
+                coord_writer.close()
+                await coord_writer.wait_closed()
+                print("Notificação de saída enviada.")
+            except Exception as e:
+                print(f"Falha ao notificar o coordenador: {e}")
+        
+        print("Supernó desligado.")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\nEncerrando supernó...")
