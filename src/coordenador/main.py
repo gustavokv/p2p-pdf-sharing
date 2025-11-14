@@ -65,6 +65,7 @@ async def superno_handler(reader, writer):
         while not sair:
             sair = await coordenador(reader, writer, addr)
 
+
     except (ConnectionResetError, asyncio.IncompleteReadError) as error:
         print(f"Conexão com {addr} perdida. Erro: {error}")
     except Exception as error:
@@ -75,7 +76,7 @@ async def superno_handler(reader, writer):
                 supernos[:] = [sn for sn in supernos if sn['addr'] != addr]
                 print(f"Super nó {addr} removido da lista")
 
-            asyncio.create_task(broadcast_lista_supernos())
+            #asyncio.create_task(broadcast_lista_supernos())
 
         writer.close()
         await writer.wait_closed()
@@ -93,10 +94,14 @@ async def coordenador (reader, writer, addr):
         comando = msg_recebida.get("comando")
 
         if comando == mensagens.CMD_SN2COORD_FINISH:
-            print(f"Supernó {addr} finalizou o registro dos clientes.")                
+            print(f"Supernó {addr} finalizou o registro dos clientes.")
         elif comando == mensagens.CMD_SN2COORD_SAIDA:
             print(f"Supernó {addr} solicitou a saída.")
             return True
+        elif comando == mensagens.CMD_SN2COORD_PERGUNTA_ESTOU_VIVO:
+            resposta = mensagens.cria_resposta_estou_vivo()
+            writer.write(resposta.encode('utf-8'))
+            print(f"Resposta enviada. Máquina: {addr}")
         else:
             # Recebe demais requisições do super nó
             handle_requisicoes_superno(msg_recebida)

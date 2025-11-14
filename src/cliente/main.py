@@ -73,6 +73,7 @@ async def medir_latencia(ip, porta):
 
 async def registro():
     global chave_identificadora, reader, writer, ipLocal, ipSuperno, porta
+    porta = int(sys.argv[1])  # REMOVER NO LAB
 
     try:
         reader, writer = await asyncio.open_connection(ipSuperno, porta)
@@ -82,7 +83,9 @@ async def registro():
         return False # Indica falha no registro
 
     # Gera a chave única usando hash (SHA-1) do IP
-    chave_identificadora = uuid.uuid5(uuid.NAMESPACE_DNS, ipLocal)
+    #chave_identificadora = uuid.uuid5(uuid.NAMESPACE_DNS, ipLocal)
+    chave_identificadora = uuid.uuid4()
+
     print(f"Chave identificadora gerada (SHA-1): {chave_identificadora}")
 
     # Envia a requisição de registro

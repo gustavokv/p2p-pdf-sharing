@@ -35,7 +35,7 @@ async def registro():
     reader, writer = await asyncio.open_connection(ipServidor, portaCoordenador)
     print(f"Conectado ao coordenador em {ipServidor}:{portaCoordenador}")
 
-    global portaSuperno
+    global portaSuperno, Coord
     portaSuperno = int(sys.argv[1])
     print(f"porta: {portaSuperno}")
 
@@ -67,6 +67,8 @@ async def registro():
 
     Coord["reader"] = reader
     Coord["writer"] = writer
+
+    asyncio.create_task(monitorar_lider())
 
     print("Registro finalizado. Conexão ativa.")
 
@@ -340,6 +342,37 @@ async def superno(reader, writer, addr):
     return False
 
 
+async def superno(reader, writer, addr):
+    dados = await reader.read(4096)
+
+
+    novoComando = mensagens.decodifica_mensagem(dados)
+    comando = novoComando.get('comando')
+
+    print(f"{novoComando}")
+
+    if comando == mensagens.CMD_CLIENTESN2_REQUISICAO_REGISTRO:
+        # Caso de requisição de registro vinda de um cliente
+        await NovoCliente(reader, writer, novoComando)
+    elif comando == mensagens.CMD_SN2COORD_FINISH:
+        # Caso de recebimento do pacote finish vinda de um super nó
+        print(f"superno {addr} finalizou registro de clientes")
+    elif comando == mensagens.CMD_CLIENTE2SN_BUSCA_ARQUIVO:
+        # Caso de busca (solicitação de download) vinda de um cliente.
+        await handle_busca_cliente(writer, novoComando)
+    elif comando == mensagens.CMD_SN2SN_QUERY_ARQUIVO:
+        # Caso de requisição vinda de outro super nó para realizar a verificação dos arquivos de índice do super nó atual
+        await handle_query_vizinho(writer, novoComando)
+    elif comando == mensagens.CMD_CLIENTE2SN_INDEXAR_ARQUIVO:
+        # Caso de um cliente avisando que possui um arquivo
+        await handle_indexar_arquivo(writer, novoComando)
+    elif comando == mensagens.CMD_CLIENTE2SN_SAIDA:
+        # Caso de um cliente avisando que está saindo
+        await handle_saida_cliente(writer, novoComando)
+        return True
+
+    return False
+
 async def NovoCliente(reader, writer, requisicao_registro):
     novo_cliente = {
         "writer": writer,
@@ -395,6 +428,51 @@ async def conectarComOutrosSupernos():
     global superNosVizinhos
     superNosVizinhos = vizinhos
 
+
+async def monitorar_lider():
+    """Verifica periodicamente se o líder está vivo."""
+    while True:
+        # 1. Dorme pelo intervalo de verificação (ex: 5 segundos)
+        await asyncio.sleep(5)
+
+        if not isCoordenador:  # Não precisa monitorar a si mesmo
+            try:
+                print("Monitorando líder: ARE YOU ALIVE?")
+
+                # 2. Envia a mensagem de "ping"
+                msg_ping = mensagens.cria_mensagem_alive()  # Crie esta função
+                Coord["writer"].write(msg_ping.encode('utf-8'))
+                await Coord["writer"].drain()
+
+                # 3. Usa wait_for para esperar a resposta ("pong")
+                #    com um timeout curto (ex: 3 segundos)
+                dados = await asyncio.wait_for(Coord["reader"].read(4096), timeout=3.0)
+
+                if not dados:
+                    raise ConnectionError("Líder fechou a conexão")
+
+                # 4. Decodifica e verifica se é a resposta certa
+                resposta = mensagens.decodifica_mensagem(dados)
+                if resposta.get('comando') == mensagens.CMD_COORD2SN_RESPOSTA_ESTOU_VIVO:
+                    print(f"Monitorando líder: ...Líder está VIVO. Lider: {resposta["payload"]}")
+
+            except asyncio.TimeoutError:
+                # 5. O LÍDER ESTÁ MORTO!
+                print("!!! O LÍDER MORREU (timeout) !!!")
+                # Pare de monitorar este líder
+                # Feche a conexão
+                # Chame a eleição
+                # await iniciar_eleicao()
+                break  # Sai do loop de monitoramento
+
+            except (ConnectionError, ConnectionResetError) as e:
+                # 6. O LÍDER TAMBÉM ESTÁ MORTO! (Conexão caiu)
+                print(f"!!! O LÍDER MORREU (conexão perdida: {e}) !!!")
+                # Chame a eleição
+                # await iniciar_eleicao()
+                break  # Sai do loop
+        else:
+            break
 
 async def main():
     # Esta tarefa manterá o servidor de clientes/supernós rodando
