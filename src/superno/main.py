@@ -24,6 +24,7 @@ nunClinteMax = 3
 lock = asyncio.Lock()
 Coord = {}
 minha_chave_global = None
+isCoordenador = False
 
 # Lista dos arquivos pertencentes a cada cliente. Mapeia o nome do arquivo para seus "donos"
 indice_arquivos_local = {} 
@@ -259,39 +260,15 @@ async def servidorSuperNo(reader, writer):
     addr = writer.get_extra_info('peername')
     print(f"Cliente {addr} conectado.")
 
+
     try:
-        while True:
-            dados = await reader.readuntil(b'\n')
-            
-            if not dados:
-                print('Conexão com {addr} fechada.')
-                break
-
-            novoComando = mensagens.decodifica_mensagem(dados)
-            comando = novoComando.get('comando')
-
-            print(f"{novoComando}")
-
-            if comando == mensagens.CMD_CLIENTESN2_REQUISICAO_REGISTRO:
-                # Caso de requisição de registro vinda de um cliente 
-                await NovoCliente(reader, writer, novoComando)
-            elif comando == mensagens.CMD_SN2COORD_FINISH:
-                # Caso de recebimento do pacote finish vinda de um super nó 
-                print(f"superno {addr} finalizou registro de clientes")
-            elif comando == mensagens.CMD_CLIENTE2SN_BUSCA_ARQUIVO:
-                # Caso de busca (solicitação de download) vinda de um cliente. 
-                await handle_busca_cliente(writer, novoComando)
-            elif comando == mensagens.CMD_SN2SN_QUERY_ARQUIVO:
-                # Caso de requisição vinda de outro super nó para realizar a verificação dos arquivos de índice do super nó atual 
-                await handle_query_vizinho(writer, novoComando)
-            elif comando == mensagens.CMD_CLIENTE2SN_INDEXAR_ARQUIVO:
-                # Caso de um cliente avisando que possui um arquivo
-                await handle_indexar_arquivo(writer, novoComando)
-            elif comando == mensagens.CMD_CLIENTE2SN_SAIDA:
-                # Caso de um cliente avisando que está saindo
-                await handle_saida_cliente(writer, novoComando)
-                break
-
+        sair = False
+        while not sair:
+            if not isCoordenador:
+                sair = await superno(reader, writer, addr)
+            else:
+                #coordenador
+                ...
     except (ConnectionResetError, asyncio.IncompleteReadError) as error:
         print(f"Conexão com {addr} perdida. Erro: {error}")
     except Exception as error:
@@ -330,6 +307,37 @@ async def servidorSuperNo(reader, writer):
             print(f"Erro ao fechar writer do cliente {addr}: {e}")
         
         print(f"Limpeza para {addr} concluída.")
+
+async def superno(reader, writer, addr):
+    dados = await reader.read(4096)
+
+
+    novoComando = mensagens.decodifica_mensagem(dados)
+    comando = novoComando.get('comando')
+
+    print(f"{novoComando}")
+
+    if comando == mensagens.CMD_CLIENTESN2_REQUISICAO_REGISTRO:
+        # Caso de requisição de registro vinda de um cliente
+        await NovoCliente(reader, writer, novoComando)
+    elif comando == mensagens.CMD_SN2COORD_FINISH:
+        # Caso de recebimento do pacote finish vinda de um super nó
+        print(f"superno {addr} finalizou registro de clientes")
+    elif comando == mensagens.CMD_CLIENTE2SN_BUSCA_ARQUIVO:
+        # Caso de busca (solicitação de download) vinda de um cliente.
+        await handle_busca_cliente(writer, novoComando)
+    elif comando == mensagens.CMD_SN2SN_QUERY_ARQUIVO:
+        # Caso de requisição vinda de outro super nó para realizar a verificação dos arquivos de índice do super nó atual
+        await handle_query_vizinho(writer, novoComando)
+    elif comando == mensagens.CMD_CLIENTE2SN_INDEXAR_ARQUIVO:
+        # Caso de um cliente avisando que possui um arquivo
+        await handle_indexar_arquivo(writer, novoComando)
+    elif comando == mensagens.CMD_CLIENTE2SN_SAIDA:
+        # Caso de um cliente avisando que está saindo
+        await handle_saida_cliente(writer, novoComando)
+        return True
+
+    return False
 
 
 async def NovoCliente(reader, writer, requisicao_registro):
