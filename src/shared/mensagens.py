@@ -4,12 +4,15 @@ import json
 CMD_COORD2SN_RESPOSTA_REGISTRO = "COORD2SN_RESPOSTA_REGISTRO"
 CMD_COORD2SN_CONFIRMACAO_REGISTRO = "COORD2SN_CONFIRMACAO_REGISTRO"
 CMD_COORD2SN_LISTA_SUPERNOS = "COORD2SN_LISTA_SUPERNOS"
+CMD_COORD2SN_RESPOSTA_ESTOU_VIVO = "CMD_COORD2SN_RESPOSTA_ESTOU_VIVO"
 
 # Comandos para comunicação do super nó com o coordenador 
 CMD_SN2COORD_REQUISICAO_REGISTRO = "SN2COORD_REQUISICAO_REGISTRO"
 CMD_SN2COORD_ACK_REGISTRO = "SN2COORD_ACK_REGISTRO"
 CMD_SN2COORD_FINISH = "SN2COORD_FINISH"
 CMD_SN2COORD_SAIDA = "SN2COORD_SAIDA"
+CMD_SN2COORD_PERGUNTA_ESTOU_VIVO = "CMD_SN2COORD_PERGUNTA_ESTOU_VIVO"
+
 
 #SUPERNO PARA CLIENTE
 CMD_SN2CLIENTE_RESPOSTA_REGISTRO = "CMD_SN2CLIENTE_REQUISICAO_REGISTRO"
@@ -32,7 +35,6 @@ CMD_SN2SN_QUERY_ARQUIVO = "SN2SN_QUERY_ARQUIVO"
 CMD_SN2SN_RESPOSTA_ARQUIVO_ACHOU = "SN2SN_RESPOSTA_ARQUIVO_ACHOU"
 CMD_SN2SN_RESPOSTA_ARQUIVO_NAO_ACHOU = "SN2SN_RESPOSTA_ARQUIVO_NAO_ACHOU"
 CMD_SN2SN_INICIAR_ELEICAO = "SN2SN_INICIAR_ELEICAO"
-CMD_SN2SN_ESTOU_VIVO = "SN2SN_ESTOU_VIVO"
 CMD_SN2SN_NOVO_COORDENADOR = "SN2SN_NOVO_COORDENADOR"
 
 
@@ -72,6 +74,9 @@ def cria_confirmacao_registro():
 def cria_broadcast_lista_supernos(supernos_ativos):
     return criar_mensagem(CMD_COORD2SN_LISTA_SUPERNOS, supernos=supernos_ativos)
 
+def cria_resposta_estou_vivo():
+    return criar_mensagem(CMD_COORD2SN_RESPOSTA_ESTOU_VIVO, mensagem = "Tô vivasso jão")
+
 
 # <--- Funções do Super nó --->
 
@@ -99,8 +104,8 @@ def cria_resposta_local_arquivo(comando, nome_arquivo, info_dono):
 def cria_mensagem_eleicao(minha_chave):
     return criar_mensagem(CMD_SN2SN_INICIAR_ELEICAO, chave_remetente=minha_chave)
 
-def cria_mensagem_alive(minha_chave):
-    return criar_mensagem(CMD_SN2SN_ESTOU_VIVO, chave_remetente=minha_chave)
+def cria_mensagem_alive():
+    return criar_mensagem(CMD_SN2COORD_PERGUNTA_ESTOU_VIVO, mensagem ="Iae, tu ta vivo??")
 
 def cria_mensagem_coordenador(minha_chave):
     return criar_mensagem(CMD_SN2SN_NOVO_COORDENADOR, chave_lider=minha_chave)
