@@ -58,74 +58,13 @@ async def superno_handler(reader, writer):
     print(f"Supernó {addr} conectado.")
 
     try:
-        # Espera pela solicitação de registro no coordenador
-        dados = await reader.read(4096)
-        requisicao_registro = mensagens.decodifica_mensagem(dados)
 
-        if not requisicao_registro or requisicao_registro.get("comando") != mensagens.CMD_SN2COORD_REQUISICAO_REGISTRO:
-            print(f"Mensagem de registro inválida de {addr}.")
-            return
+        await configInicial(reader, writer, addr)
 
-        # Gera a chave única e devolve para o super nó
-        chave_unica = uuid.uuid4().hex
-        print(f"Registrando supernó {addr} com a chave única: {chave_unica}.")
+        sair = False
+        while not sair:
+            sair = await coordenador(reader, writer, addr)
 
-        msg_resposta = mensagens.cria_resposta_coordenador("SUCESSO", chave_unica)
-        writer.write(msg_resposta.encode('utf-8'))
-        await writer.drain()
-        
-        # Aguarda ACK do super nó
-        dados = await reader.read(4096)
-        msg_ack = mensagens.decodifica_mensagem(dados)
-
-        if not msg_ack or msg_ack.get("comando") != mensagens.CMD_SN2COORD_ACK_REGISTRO:
-            print(f"ACK inválido de {addr}.")
-            return
-
-        if msg_ack.get("payload", {}).get("chave_unica") != chave_unica:
-            print(f"Chave no ACK de {addr} está diferente.")
-            return
-
-        print(f"ACK recebido com sucesso de {addr}")
-
-        async with lock_supernos:
-            novo_superno = {
-                "writer": writer,
-                "addr": addr,
-                "chave": chave_unica,
-                "ip": requisicao_registro["payload"]["endereco_ip"],
-                "porta": requisicao_registro["payload"]["porta"]
-            } 
-
-            supernos.append(novo_superno)
-            is_registrado = True
-            print(f"Novo super nó registrado. Total de super nós registrados: {len(supernos)}.")
-
-            if len(supernos) == TOTAL_SUPERNOS:
-                # create_task para executar o broadcast e não bloquear esta função
-                asyncio.create_task(broadcast_lista_supernos())
-                asyncio.create_task(broadcast_registros_concluidos())
-
-        while True:
-            dados = await reader.read(4096)
-
-            if not dados:
-                print(f"Super nó {addr} se desconectou.")
-                break
-
-            msg_recebida = mensagens.decodifica_mensagem(dados)
-
-            if msg_recebida:
-                comando = msg_recebida.get("comando")
-
-                if comando == mensagens.CMD_SN2COORD_FINISH:
-                    print(f"Supernó {addr} finalizou o registro dos clientes.")                
-                elif comando == mensagens.CMD_SN2COORD_SAIDA:
-                    print(f"Supernó {addr} solicitou a saída.")
-                    break 
-                else:
-                    # Recebe demais requisições do super nó
-                    handle_requisicoes_superno(msg_recebida)
 
     except (ConnectionResetError, asyncio.IncompleteReadError) as error:
         print(f"Conexão com {addr} perdida. Erro: {error}")
@@ -137,10 +76,82 @@ async def superno_handler(reader, writer):
                 supernos[:] = [sn for sn in supernos if sn["addr"] != addr]
                 print(f"Super nó {addr} removido da lista")
 
-            asyncio.create_task(broadcast_lista_supernos())
+            #asyncio.create_task(broadcast_lista_supernos())
 
         writer.close()
         await writer.wait_closed()
+
+async def coordenador (reader, writer, addr):
+    dados = await reader.read(4096)
+
+    msg_recebida = mensagens.decodifica_mensagem(dados)
+
+    if msg_recebida:
+        comando = msg_recebida.get("comando")
+
+        if comando == mensagens.CMD_SN2COORD_FINISH:
+            print(f"Supernó {addr} finalizou o registro dos clientes.")
+        elif comando == mensagens.CMD_SN2COORD_SAIDA:
+            print(f"Supernó {addr} solicitou a saída.")
+            return True
+        elif comando == mensagens.CMD_SN2COORD_PERGUNTA_ESTOU_VIVO:
+            resposta = mensagens.cria_resposta_estou_vivo()
+            writer.write(resposta.encode('utf-8'))
+            print(f"Resposta enviada. Máquina: {addr}")
+        else:
+            # Recebe demais requisições do super nó
+            handle_requisicoes_superno(msg_recebida)
+
+    return False
+
+async def configInicial(reader, writer, addr):
+    # Espera pela solicitação de registro no coordenador
+    dados = await reader.read(4096)
+    requisicao_registro = mensagens.decodifica_mensagem(dados)
+
+    if not requisicao_registro or requisicao_registro.get("comando") != mensagens.CMD_SN2COORD_REQUISICAO_REGISTRO:
+        print(f"Mensagem de registro inválida de {addr}.")
+        return
+
+    # Gera a chave única e devolve para o super nó
+    chave_unica = uuid.uuid4().hex
+    print(f"Registrando supernó {addr} com a chave única: {chave_unica}.")
+
+    msg_resposta = mensagens.cria_resposta_coordenador("SUCESSO", chave_unica)
+    writer.write(msg_resposta.encode('utf-8'))
+    await writer.drain()
+
+    # Aguarda ACK do super nó
+    dados = await reader.read(4096)
+    msg_ack = mensagens.decodifica_mensagem(dados)
+
+    if not msg_ack or msg_ack.get("comando") != mensagens.CMD_SN2COORD_ACK_REGISTRO:
+        print(f"ACK inválido de {addr}.")
+        return
+
+    if msg_ack.get("payload", {}).get("chave_unica") != chave_unica:
+        print(f"Chave no ACK de {addr} está diferente.")
+        return
+
+    print(f"ACK recebido com sucesso de {addr}")
+
+    async with lock_supernos:
+        novo_superno = {
+            "writer": writer,
+            "addr": addr,
+            "chave": chave_unica,
+            "ip": requisicao_registro["payload"]["endereco_ip"],
+            "porta": requisicao_registro["payload"]["porta"]
+        }
+
+        supernos.append(novo_superno)
+        is_registrado = True
+        print(f"Novo super nó registrado. Total de super nós registrados: {len(supernos)}.")
+
+        if len(supernos) == TOTAL_SUPERNOS:
+            # create_task para executar o broadcast e não bloquear esta função
+            asyncio.create_task(broadcast_lista_supernos())
+            asyncio.create_task(broadcast_registros_concluidos())
 
 # Realiza o broadcast para todos os super nós da rede após todos serem registrados
 async def broadcast_registros_concluidos():
