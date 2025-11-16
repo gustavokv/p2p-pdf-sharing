@@ -13,9 +13,6 @@ supernos = []
 # Evento para sinalizar quando os nós estão prontos
 lock_supernos = asyncio.Lock()
 
-def handle_requisicoes_superno(msg):
-    ...
-
 # Função para realizar o broadcast da lista de super nós ativos aos super nós.
 async def broadcast_lista_supernos():
     async with lock_supernos:
@@ -105,8 +102,7 @@ async def coordenador (reader, writer, addr):
             await writer.drain()
             print(f"Resposta enviada. Máquina: {addr}")
         else:
-            # Recebe demais requisições do super nó
-            handle_requisicoes_superno(msg_recebida)
+            print(f"Comando {comando} não identificado.")
 
     return False
 

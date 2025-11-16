@@ -28,8 +28,6 @@ isCoordenador = False
 
 # Lista dos arquivos pertencentes a cada cliente. Mapeia o nome do arquivo para seus "donos"
 indice_arquivos_local = {} 
-# Rastreia buscas enviadas para outros super nós
-#queries_pendentes = {}
 
 async def registro():
     reader, writer = await asyncio.open_connection(ipServidor, portaCoordenador)
@@ -132,6 +130,7 @@ async def handle_indexar_arquivo(writer, requisicao):
                     "ip": cliente["ip"],
                     "porta": cliente["porta"],
                     "chave": cliente["chave"],
+                    "valor": requisicao["payload"]["tamanho_arquivo"]
                 }
                 break
     
@@ -217,48 +216,6 @@ async def handle_saida_cliente(writer, requisicao):
         print(f"Conexão com {chave_cliente_saindo[:6]} fechada.")
     except Exception as e:
         print(f"Erro ao fechar conexão com cliente saindo: {e}")
-
-"""
-async def ouvir_coordenador():
-    
-    Tarefa dedicada a ouvir mensagens do Coordenador
-    
-    reader = Coord.get("reader")
-    if not reader:
-        print("Conexão com Coordenador não encontrada para escuta.")
-        return
-
-    print("Ouvinte do coordenador iniciado.")
-    try:
-        while True:
-            dados = await reader.readuntil(b'\n')
-            if not dados:
-                raise ConnectionError("Coordenador fechou a conexão.")
-
-            msg = mensagens.decodifica_mensagem(dados)
-            if not msg:
-                continue
-
-            comando = msg.get("comando")
-            
-            if comando == mensagens.CMD_COORD2SN_LISTA_SUPERNOS:
-                # Atualiza a lista global de supernós
-                async with lock:
-                    global ListaDeSupernos
-                    ListaDeSupernos = msg["payload"]["supernos"]
-                print(f"Lista de Supernós atualizada: {len(ListaDeSupernos)} nós.")
-
-            else:
-                print(f"Recebida msg desconhecida: {comando}")
-
-    except (asyncio.IncompleteReadError, ConnectionError) as e:
-        print(f"Conexão com o Coordenador perdida: {e}")
-        # (Aqui você pode disparar a eleição)
-    except Exception as e:
-        print(f"Erro inesperado no ouvinte do coordenador: {e}")
-    finally:
-        print("Ouvinte do coordenador encerrado.")
-"""
 
 async def servidorSuperNo(reader, writer):
     addr = writer.get_extra_info('peername')
@@ -402,7 +359,6 @@ async def monitorar_lider():
     """
     Verifica periodicamente se o líder está vivo E
     processa mensagens de broadcast dele.
-    Esta é a ÚNICA tarefa que lê de 'Coord["reader"]'.
     """
     reader = Coord.get("reader")
     writer = Coord.get("writer")
@@ -414,16 +370,16 @@ async def monitorar_lider():
     print("Monitor do Coordenador iniciado (ping/listen).")
     
     while True:
-        if isCoordenador: # Se eu sou o coordenador, não faço nada disso.
+        if isCoordenador: # Se eu sou o coordenador, não faço nada
             break
             
         try:
-            # 1. Envia um PING
+            # Envia um PING
             msg_ping = mensagens.cria_mensagem_alive()
-            writer.write(msg_ping.encode('utf-8') + b'\n') # Use '\n'
+            writer.write(msg_ping.encode('utf-8') + b'\n')
             await writer.drain()
 
-            dados = await asyncio.wait_for(reader.readuntil(b'\n'), timeout=10.0) # 10s timeout
+            dados = await asyncio.wait_for(reader.readuntil(b'\n'), timeout=10.0)
             
             if not dados:
                 raise ConnectionError("Líder fechou a conexão")
@@ -434,7 +390,7 @@ async def monitorar_lider():
 
             comando = msg.get("comando")
 
-            if comando == mensagens.CMD_COORD2SN_RESPOSTA_ESTOU_VIVO: # O "pong"
+            if comando == mensagens.CMD_COORD2SN_RESPOSTA_ESTOU_VIVO: # O pong
                 print(f"Monitorando líder: ...Líder está VIVO.")
             
             elif comando == mensagens.CMD_COORD2SN_LISTA_SUPERNOS:
