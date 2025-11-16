@@ -143,6 +143,8 @@ async def handle_download_request(reader_peer, writer_peer):
                     writer_peer.write_eof()
                     await writer_peer.drain()
 
+                await reader_peer.read()
+
             except Exception as e:
                 print(f"Erro durante a transferência para {addr_peer}: {e}")
         else:
@@ -378,7 +380,11 @@ async def main():
         menu_task = asyncio.create_task(menu_loop())
         
         # Roda o menu e o servidor P2P ao mesmo tempo
-        await asyncio.gather(menu_task, servidor_peer_task)
+        tasks = {menu_task, servidor_peer_task}
+        done, pending = await asyncio.wait(
+            tasks, 
+            return_when=asyncio.FIRST_COMPLETED
+        )
 
     except KeyboardInterrupt:
         print("\nCtrl+C pressionado...")
