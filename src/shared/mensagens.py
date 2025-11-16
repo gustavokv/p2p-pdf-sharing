@@ -37,6 +37,9 @@ CMD_SN2SN_RESPOSTA_ARQUIVO_NAO_ACHOU = "SN2SN_RESPOSTA_ARQUIVO_NAO_ACHOU"
 CMD_SN2SN_INICIAR_ELEICAO = "SN2SN_INICIAR_ELEICAO"
 CMD_SN2SN_NOVO_COORDENADOR = "SN2SN_NOVO_COORDENADOR"
 
+# Cliente para cliente
+CMD_PEER2PEER_REQUISICAO_DOWNLOAD = "P2P_REQUISICAO_DOWNLOAD"
+
 
 # <--- Padroniza a forma de troca de mensagem entre nós --->
 
@@ -124,8 +127,11 @@ def cria_requisicao_registro_cliente(ip, porta, chave_unica):
 def cria_requisicao_busca_cliente(nome_arquivo):
     return criar_mensagem(CMD_CLIENTE2SN_BUSCA_ARQUIVO, nome_arquivo=nome_arquivo)
 
-def cria_requisicao_indexar_arquivo(nome_arquivo):
-    return criar_mensagem(CMD_CLIENTE2SN_INDEXAR_ARQUIVO, nome_arquivo=nome_arquivo)
+def cria_requisicao_indexar_arquivo(nome_arquivo, tamanho_arquivo):
+    return criar_mensagem(CMD_CLIENTE2SN_INDEXAR_ARQUIVO, nome_arquivo=nome_arquivo,tamanho_arquivo=tamanho_arquivo)
 
 def cria_mensagem_saida_cliente(chave_cliente):
     return criar_mensagem(CMD_CLIENTE2SN_SAIDA, chave_cliente=chave_cliente)
+
+def cria_requisicao_download_peer(nome_arquivo):
+    return criar_mensagem(CMD_PEER2PEER_REQUISICAO_DOWNLOAD, nome_arquivo=nome_arquivo)
