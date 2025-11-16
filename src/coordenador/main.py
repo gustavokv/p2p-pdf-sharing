@@ -7,7 +7,7 @@ from src.shared import mensagens
 HOST = "0.0.0.0"
 PORTA = 8000
 
-TOTAL_SUPERNOS = 4
+TOTAL_SUPERNOS = 2
 supernos = []
 
 # Evento para sinalizar quando os nós estão prontos
@@ -34,6 +34,7 @@ async def broadcast_lista_supernos():
             } for sn in supernos
         ]
 
+        print(supernos_para_enviar)
         msg_broadcast = mensagens.cria_broadcast_lista_supernos(supernos_para_enviar)
 
         tasks = []
@@ -153,7 +154,7 @@ async def configInicial(reader, writer, addr):
         is_registrado = True
         print(f"Novo super nó registrado. Total de super nós registrados: {len(supernos)}.")
 
-        if len(supernos) == TOTAL_SUPERNOS:
+        if len(supernos) >= TOTAL_SUPERNOS:
             # create_task para executar o broadcast e não bloquear esta função
             asyncio.create_task(broadcast_lista_supernos())
             asyncio.create_task(broadcast_registros_concluidos())
@@ -209,8 +210,8 @@ async def main():
     addr_sn = servidor_sn.sockets[0].getsockname()
     print(f"Coordenador (para Supernós) escutando em: {addr_sn[0]}:{addr_sn[1]}")
 
-    porta_bootstrap = PORTA - 1 # Ex: 7999
-    servidor_cli = await asyncio.start_server(cliente_solicitacao_lista_supernos, HOST, porta_bootstrap)
+    porta_para_cliente = PORTA - 1 # 7999
+    servidor_cli = await asyncio.start_server(cliente_solicitacao_lista_supernos, HOST, porta_para_cliente)
     addr_cli = servidor_cli.sockets[0].getsockname()
     print(f"Coordenador (para Clientes) escutando em: {addr_cli[0]}:{addr_cli[1]}")
 

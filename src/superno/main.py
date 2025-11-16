@@ -131,7 +131,7 @@ async def handle_indexar_arquivo(writer, requisicao):
                 info_dono = {
                     "ip": cliente["ip"],
                     "porta": cliente["porta"],
-                    "chave": cliente["chave"]
+                    "chave": cliente["chave"],
                 }
                 break
     
@@ -313,40 +313,7 @@ async def servidorSuperNo(reader, writer):
         print(f"Limpeza para {addr} concluída.")
 
 async def superno(reader, writer, addr):
-    dados = await reader.read(4096)
-
-
-    novoComando = mensagens.decodifica_mensagem(dados)
-    comando = novoComando.get('comando')
-
-    print(f"{novoComando}")
-
-    if comando == mensagens.CMD_CLIENTESN2_REQUISICAO_REGISTRO:
-        # Caso de requisição de registro vinda de um cliente
-        await NovoCliente(reader, writer, novoComando)
-    elif comando == mensagens.CMD_SN2COORD_FINISH:
-        # Caso de recebimento do pacote finish vinda de um super nó
-        print(f"superno {addr} finalizou registro de clientes")
-    elif comando == mensagens.CMD_CLIENTE2SN_BUSCA_ARQUIVO:
-        # Caso de busca (solicitação de download) vinda de um cliente.
-        await handle_busca_cliente(writer, novoComando)
-    elif comando == mensagens.CMD_SN2SN_QUERY_ARQUIVO:
-        # Caso de requisição vinda de outro super nó para realizar a verificação dos arquivos de índice do super nó atual
-        await handle_query_vizinho(writer, novoComando)
-    elif comando == mensagens.CMD_CLIENTE2SN_INDEXAR_ARQUIVO:
-        # Caso de um cliente avisando que possui um arquivo
-        await handle_indexar_arquivo(writer, novoComando)
-    elif comando == mensagens.CMD_CLIENTE2SN_SAIDA:
-        # Caso de um cliente avisando que está saindo
-        await handle_saida_cliente(writer, novoComando)
-        return True
-
-    return False
-
-
-async def superno(reader, writer, addr):
-    dados = await reader.read(4096)
-
+    dados = await reader.readuntil(b'\n')
 
     novoComando = mensagens.decodifica_mensagem(dados)
     comando = novoComando.get('comando')
@@ -425,7 +392,7 @@ async def conectarComOutrosSupernos():
             # Guarda as conexões em uma lista global
             vizinhos.append({"reader": reader, "writer": writer, "info": sn})
         except Exception as e:
-            print(f"Falha ao conectar com {sn['ip']}:{sn['porta']} -> {e}")
+            print(f"Falha ao conectar com {sn['conectarComOutrosSupernos()ip']}:{sn['porta']} -> {e}")
 
     global superNosVizinhos
     superNosVizinhos = vizinhos
@@ -452,34 +419,29 @@ async def monitorar_lider():
             
         try:
             # 1. Envia um PING
-            # (Você precisará de 'cria_ping_coordenador' e a resposta no coordenador)
             msg_ping = mensagens.cria_mensagem_alive()
             writer.write(msg_ping.encode('utf-8') + b'\n') # Use '\n'
             await writer.drain()
 
-            # 2. Espera por QUALQUER mensagem (seja um PONG ou um BROADCAST)
-            #    com um timeout. Se nada chegar, o líder morreu.
             dados = await asyncio.wait_for(reader.readuntil(b'\n'), timeout=10.0) # 10s timeout
             
             if not dados:
                 raise ConnectionError("Líder fechou a conexão")
 
-            # 3. Processa a mensagem que chegou
             msg = mensagens.decodifica_mensagem(dados)
             if not msg:
                 continue
 
             comando = msg.get("comando")
 
-            # --- Lógica do 'monitorar_lider' (original) ---
             if comando == mensagens.CMD_COORD2SN_RESPOSTA_ESTOU_VIVO: # O "pong"
                 print(f"Monitorando líder: ...Líder está VIVO.")
             
-            # --- Lógica do 'ouvir_coordenador' (movida para cá) ---
             elif comando == mensagens.CMD_COORD2SN_LISTA_SUPERNOS:
                 async with lock:
                     global ListaDeSupernos
                     ListaDeSupernos = msg["payload"]["supernos"]
+                    await conectarComOutrosSupernos()
                 print(f"Monitorando líder: [BROADCAST] Lista de Supernós atualizada: {len(ListaDeSupernos)} nós.")
             
             else:

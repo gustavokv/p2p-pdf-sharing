@@ -107,6 +107,8 @@ async def enviar_arquivo_possuido(nome_arquivo):
     if not writer:
         print("Não está conectado. Tente reiniciar.")
         return
+    
+    print('VAI ENVIAR EIN')
 
     msg = mensagens.cria_requisicao_indexar_arquivo(nome_arquivo)
     writer.write(msg.encode('utf-8') + b'\n')
