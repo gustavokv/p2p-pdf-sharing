@@ -5,6 +5,11 @@ import os
 
 #from sympy.codegen import Print
 
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.abspath(os.path.join(current_dir, '../../'))
+if root_dir not in sys.path:
+    sys.path.append(root_dir)
+
 from src.shared import mensagens
 
 #USAR NO LAB
@@ -26,8 +31,153 @@ Coord = {}
 minha_chave_global = None
 isCoordenador = False
 
-# Lista dos arquivos pertencentes a cada cliente. Mapeia o nome do arquivo para seus "donos"
+# Lista dos arquivos pertencentes a cada cliente. Mapeia o nome do arquivo para seus donos
 indice_arquivos_local = {} 
+
+consenso_lock = asyncio.Lock()
+consenso_transacoes = {}
+
+async def handle_voto_cliente(requisicao):
+    """
+    Processa um voto SIM ou NÃO de um cliente durante o 2PC.
+    """
+    comando = requisicao.get("comando")
+    tid = requisicao.get("payload", {}).get("tid")
+
+    if not tid:
+        print("Consenso - Voto recebido sem TID. Ignorando.")
+        return
+
+    async with consenso_lock:
+        transacao = consenso_transacoes.get(tid)
+        if not transacao:
+            print(f"Consenso - Voto recebido para TID desconhecido: {tid}. Ignorando.")
+            return
+
+        if transacao["resultado"]: # Resultado já decidido
+            return
+
+        print(f"Consenso - Voto recebido para TID {tid}: {comando}")
+
+        if comando == mensagens.CMD_CLIENTE2SN_VOTO_NAO:
+            transacao["resultado"] = "ABORT"
+            transacao["evento"].set() # Libera o await
+        
+        elif comando == mensagens.CMD_CLIENTE2SN_VOTO_SIM:
+            transacao["votos_sim"] += 1
+            if transacao["votos_sim"] == transacao["total_clientes"]:
+                transacao["resultado"] = "COMMIT"
+                transacao["evento"].set() # Libera o await
+
+async def iniciar_replicacao_consenso(writer_novo_superno):
+    """Inicia o 2PC e Voto do Cliente para replicar o índice."""
+    
+    tid = str(uuid.uuid4())
+    evento_votacao = asyncio.Event()
+    resultado_final = "ABORT" # Padrão
+    
+    print(f"Consenso - {tid[:6]} Iniciando replicação...")
+
+    # if not writer_novo_superno:
+    #     print("Consenso - teste: Nenhum writer_novo_superno fornecido")
+
+    try: # Realiza a Fase 1
+        print(f"Consenso {tid[:6]} Fase 1: Enviando Pedido de Votação (VOTE_REQUEST)...")
+        
+        soma_mestre = 0
+        num_clientes_votantes = 0
+        
+        async with lock:
+            # Calcula a soma mestre
+            for donos_lista in indice_arquivos_local.values():
+                for dono in donos_lista:
+                    soma_mestre += dono.get("valor", 0)
+            num_clientes_votantes = len(listaDeClientes)
+
+        if num_clientes_votantes == 0:
+            print(f"Consenso {tid[:6]} Nenhum cliente para votar. Comita sozinho.")
+            resultado_final = "COMMIT"
+        else:
+            async with consenso_lock:
+                consenso_transacoes[tid] = {
+                    "evento": evento_votacao,
+                    "total_clientes": num_clientes_votantes,
+                    "votos_sim": 0,
+                    "resultado": None
+                }
+            
+            # Envia pedido de voto para todos os clientes
+            msg_request = mensagens.cria_pedido_votacao(tid, indice_arquivos_local, soma_mestre)
+            tasks = []
+            async with lock:
+                for cliente in listaDeClientes:
+                    cliente["writer"].write(msg_request.encode('utf-8') + b'\n')
+                    tasks.append(cliente["writer"].drain())
+            await asyncio.gather(*tasks)
+
+            # Espera pelos votos
+            print(f"Consenso {tid[:6]}  Aguardando {num_clientes_votantes} votos (Timeout de 20segundos)...")
+            try:
+                await asyncio.wait_for(evento_votacao.wait(), timeout=20.0)
+                async with consenso_lock:
+                    resultado_final = consenso_transacoes[tid]["resultado"]
+            except asyncio.TimeoutError:
+                print(f"Consenso{tid[:6]} Timeout! Clientes não responderam. Abortando.")
+                resultado_final = "ABORT"
+
+        # Fase 2
+        if resultado_final == "COMMIT":
+            print(f"Consenso{tid[:6]} Fase 2: Todos votaram SIM. Enviando COMMIT.")
+            
+            # Avisa todos que o consenso passou
+            msg_commit = mensagens.cria_msg_global_commit(tid)
+            async with lock:
+                for cliente in listaDeClientes:
+                    cliente["writer"].write(msg_commit.encode('utf-8') + b'\n')
+
+            # Promoção de um cliente
+            print("Escolhendo cliente para promover a Supernó...")
+            
+            cliente_escolhido = None
+            async with lock:
+                if listaDeClientes:
+                    # Escolhe o último cliente registrado para ser promovido
+                    cliente_escolhido = listaDeClientes[-1] 
+            
+            if cliente_escolhido:
+                print(f"Enviando índice para {cliente_escolhido['ip']}:{cliente_escolhido['porta']}...")
+                
+                # Aqui acontece a replicação
+                msg_promo = mensagens.criar_mensagem(
+                    mensagens.CMD_SN2CLIENTE_PROMOCAO, 
+                    indice=indice_arquivos_local
+                )
+                
+                try:
+                    cliente_escolhido["writer"].write(msg_promo.encode('utf-8') + b'\n')
+                    await cliente_escolhido["writer"].drain()
+                    print("Ordem enviada. O cliente deve reiniciar como Supernó.")
+                except Exception as e:
+                    print(f"[ERRO] Falha ao enviar promoção: {e}")
+            else:
+                print("Nenhum cliente disponível para promover.")
+        else:
+            print(f"Consenso - {tid[:6]}] Fase 2: Voto NÃO. Enviando ABORT.")
+            msg_abort = mensagens.cria_msg_global_abort(tid)
+            async with lock:
+                for cliente in listaDeClientes:
+                    cliente["writer"].write(msg_abort.encode('utf-8') + b'\n')
+
+    except Exception as e:
+        print(f"Consenso - {tid[:6]}] Erro fatal no 2PC: {e}")
+        # Tenta enviar um ABORT de emergência
+        msg_abort = mensagens.cria_msg_global_abort(tid)
+        async with lock:
+            for cliente in listaDeClientes:
+                cliente["writer"].write(msg_abort.encode('utf-8') + b'\n')
+    finally:
+        async with consenso_lock:
+            consenso_transacoes.pop(tid, None) # Limpa a transação
 
 async def registro():
     reader, writer = await asyncio.open_connection(ipServidor, portaCoordenador)
@@ -85,7 +235,7 @@ async def handle_busca_cliente(cliente_writer, requisicao):
 
     # Se não tiver no índice local, faz a inundação
     print(f"{filename} não encontrado localmente. Inundando a rede...")
-    chave_identificadora = str(uuid.uuid4()) # Neste caso, utiliza o uuid4 somente para armazenar localmente na fila de queries o cliente
+    chave_identificadora = str(uuid.uuid4()) # Neste caso, utiliza o uuid4 para armazenar localmente na fila de queries o cliente
     #queries_pendentes[chave_identificadora] = cliente_writer # Guarda quem solicitou download
 
     msg_query = mensagens.cria_query_arquivo_sn(filename, chave_identificadora)
@@ -225,11 +375,7 @@ async def servidorSuperNo(reader, writer):
     try:
         sair = False
         while not sair:
-            if not isCoordenador:
-                sair = await superno(reader, writer, addr)
-            else:
-                #coordenador
-                ...
+            sair = await superno(reader, writer, addr)
     except (ConnectionResetError, asyncio.IncompleteReadError) as error:
         print(f"Conexão com {addr} perdida. Erro: {error}")
     except Exception as error:
@@ -296,7 +442,42 @@ async def superno(reader, writer, addr):
         # Caso de um cliente avisando que está saindo
         await handle_saida_cliente(writer, novoComando)
         return True
-
+    elif comando == mensagens.CMD_CLIENTE2SN_VOTO_SIM:
+        await handle_voto_cliente(novoComando)  
+    elif comando == mensagens.CMD_CLIENTE2SN_VOTO_NAO:
+        await handle_voto_cliente(novoComando)
+    elif comando == mensagens.CMD_SN2COORD_REQUISICAO_REGISTRO:
+        print(f"Recebi pedido de registro de novo Supernó {addr}")
+        
+        # Gera uma chave nova para o colega
+        nova_chave = str(uuid.uuid4().hex)
+        
+        # Responde com SUCESSO
+        msg_resp = mensagens.cria_resposta_coordenador("SUCESSO", nova_chave)
+        writer.write(msg_resp.encode('utf-8') + b'\n')
+        await writer.drain()
+        
+        # Aguarda o ACK
+        dados_ack = await reader.readuntil(b'\n')
+        print(f"ACK recebido do novo Supernó.")
+        
+        # Adiciona à lista de supernós 
+        print(f"Enviando lista de vizinhos para o novo no...")
+        msg_lista = mensagens.cria_broadcast_lista_supernos(ListaDeSupernos)
+        writer.write(msg_lista.encode('utf-8') + b'\n')
+        await writer.drain()
+        
+        # envia mensagem final de confirmação
+        msg_fim = mensagens.cria_confirmacao_registro()
+        writer.write(msg_fim.encode('utf-8') + b'\n')
+        await writer.drain()
+    elif comando == mensagens.CMD_SN2COORD_PERGUNTA_ESTOU_VIVO:
+        # O Supernó líder precisa responder que está vivo, se não os outros nós acham que ele morreu e fazem outrra eleição
+        
+        msg_pong = mensagens.cria_resposta_estou_vivo()
+        writer.write(msg_pong.encode('utf-8') + b'\n')
+        await writer.drain()
+        
     return False
 
 async def NovoCliente(reader, writer, requisicao_registro):
@@ -320,7 +501,7 @@ async def NovoCliente(reader, writer, requisicao_registro):
                 if coord_writer:
                     coord_writer.write(msg.encode('utf-8') + b'\n')
                     await coord_writer.drain()
-                    print("--> Pacote FINISH enviado para o Coordenador.")
+                    print("-> Pacote FINISH enviado para o Coordenador.")
                 else:
                     print("Conexão com o Coordenador não encontrada para enviar FINISH.")
             except Exception as e:
@@ -357,9 +538,11 @@ async def conectarComOutrosSupernos():
 
 async def monitorar_lider():
     """
-    Verifica periodicamente se o líder está vivo E
+    Verifica de vez em quando se o líder está vivo E
     processa mensagens de broadcast dele.
     """
+    global isCoordenador
+
     reader = Coord.get("reader")
     writer = Coord.get("writer")
     
@@ -405,13 +588,25 @@ async def monitorar_lider():
 
         except asyncio.TimeoutError:
             print("!!! O LÍDER MORREU (timeout de 10s no heartbeat) !!!")
-            # await iniciar_eleicao()
-            break # Sai do loop
+            # --- ADICIONE O GATILHO 2PC ---
+            print("[ELEIÇÃO] SIMULADA! Eu sou o novo mestre.")
+            isCoordenador = True
+            print("Consenso - Disparando 2PC para replicar índice...")
+            # Como não há um "novo" supernó, passamos None.
+            asyncio.create_task(iniciar_replicacao_consenso(None)) 
+            # ---------------------------
+            break
 
         except (ConnectionError, ConnectionResetError, asyncio.IncompleteReadError) as e:
             print(f"!!! O LÍDER MORREU (conexão perdida: {e}) !!!")
-            # await iniciar_eleicao()
-            break # Sai do loop
+            # --- ADICIONE O GATILHO 2PC ---
+            print("[ELEIÇÃO] SIMULADA! Eu sou o novo mestre.")
+            #global isCoordenador # já está no escopo
+            isCoordenador = True
+            print("Consenso - Disparando 2PC para replicar índice...")
+            asyncio.create_task(iniciar_replicacao_consenso(None)) 
+            # ---------------------------
+            break
         
         # Espera 5 segundos antes de enviar o próximo ping
         await asyncio.sleep(5)

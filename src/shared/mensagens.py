@@ -21,6 +21,11 @@ CMD_SN2CLIENTE_LISTA_CLIENTE = "CMD_SN2CLIENTE_LISTA_CLIENTE"
 CMD_SN2CLIENTE_RESPOSTA_BUSCA_ACHOU = "CMD_SN2CLIENTE_RESPOSTA_BUSCA_ACHOU"
 CMD_SN2CLIENTE_RESPOSTA_BUSCA_NAO_ACHOU = "CMD_SN2CLIENTE_RESPOSTA_BUSCA_NAO_ACHOU"
 CMD_SN2CLIENTE_ACK_INDEXACAO = "SN2CLIENTE_ACK_INDEXACAO"
+CMD_SN2CLIENTE_PEDIDO_VOTACAO = "SN2CLIENTE_PEDIDO_VOTACAO"
+CMD_SN2CLIENTE_GLOBAL_COMMIT = "SN2CLIENTE_GLOBAL_COMMIT"
+CMD_SN2CLIENTE_GLOBAL_ABORT = "SN2CLIENTE_GLOBAL_ABORT"
+CMD_SN_REPLICA_INDICE = "SN_REPLICA_INDICE" # Para enviar a um novo SN
+CMD_SN2CLIENTE_PROMOCAO = "SN2CLIENTE_PROMOCAO"
 
 #CLIENTE PARA SUPERNO
 CMD_CLIENTESN2_REQUISICAO_REGISTRO = "CMD_CLIENTESN2_REQUISICAO_REGISTRO_E_ENVIO_DE_CHAVE_UNICA"
@@ -29,6 +34,8 @@ CMD_CLIENTESN2_FINISH = "CMD_CLIENTESN2_FINISH"
 CMD_CLIENTE2SN_BUSCA_ARQUIVO = "CLIENTE2SN_BUSCA_ARQUIVO"
 CMD_CLIENTE2SN_INDEXAR_ARQUIVO = "CLIENTE2SN_INDEXAR_ARQUIVO"
 CMD_CLIENTE2SN_SAIDA = "CLIENTE2SN_SAIDA"
+CMD_CLIENTE2SN_VOTO_SIM = "CLIENTE2SN_VOTO_SIM"
+CMD_CLIENTE2SN_VOTO_NAO = "CLIENTE2SN_VOTO_NAO"
 
 # SUPER NO PARA SUPER NO
 CMD_SN2SN_QUERY_ARQUIVO = "SN2SN_QUERY_ARQUIVO"
@@ -119,6 +126,21 @@ def cria_ack_indexacao_arquivo(nome_arquivo, status):
 def cria_mensagem_saida_superno(chave_superno):
     return criar_mensagem(CMD_SN2COORD_SAIDA, chave_superno=chave_superno)
 
+def cria_pedido_votacao(tid, indice_para_replicar, soma_mestre):
+    return criar_mensagem(CMD_SN2CLIENTE_PEDIDO_VOTACAO, 
+                          tid=tid, 
+                          indice=indice_para_replicar, 
+                          soma=soma_mestre)
+
+def cria_msg_global_commit(tid):
+    return criar_mensagem(CMD_SN2CLIENTE_GLOBAL_COMMIT, tid=tid)
+
+def cria_msg_global_abort(tid):
+    return criar_mensagem(CMD_SN2CLIENTE_GLOBAL_ABORT, tid=tid)
+
+def cria_msg_replica_indice(indice):
+    return criar_mensagem(CMD_SN_REPLICA_INDICE, indice=indice)
+
 # <--- Funções do cliente --->
 
 def cria_requisicao_registro_cliente(ip, porta, chave_unica):
@@ -135,3 +157,9 @@ def cria_mensagem_saida_cliente(chave_cliente):
 
 def cria_requisicao_download_peer(nome_arquivo):
     return criar_mensagem(CMD_PEER2PEER_REQUISICAO_DOWNLOAD, nome_arquivo=nome_arquivo)
+
+def cria_voto_sim(tid):
+    return criar_mensagem(CMD_CLIENTE2SN_VOTO_SIM, tid=tid)
+
+def cria_voto_nao(tid):
+    return criar_mensagem(CMD_CLIENTE2SN_VOTO_NAO, tid=tid)
