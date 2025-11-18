@@ -7,7 +7,7 @@ from src.shared import mensagens
 HOST = "0.0.0.0"
 PORTA = 8000
 
-TOTAL_SUPERNOS = 2
+TOTAL_SUPERNOS = 3
 supernos = []
 
 # Evento para sinalizar quando os nós estão prontos

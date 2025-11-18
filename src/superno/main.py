@@ -1,4 +1,5 @@
 import asyncio
+import ipaddress
 import sys
 import uuid
 import os
@@ -25,15 +26,20 @@ lock = asyncio.Lock()
 Coord = {}
 minha_chave_global = None
 isCoordenador = False
+desistoDeMeEleger = False
+em_eleicao = None
 
 # Lista dos arquivos pertencentes a cada cliente. Mapeia o nome do arquivo para seus "donos"
 indice_arquivos_local = {} 
+
+async def multicastSuperno(mensagem):
+    ...
 
 async def registro():
     reader, writer = await asyncio.open_connection(ipServidor, portaCoordenador)
     print(f"Conectado ao coordenador em {ipServidor}:{portaCoordenador}")
 
-    global portaSuperno, Coord
+    global portaSuperno, Coord, desistoDeMeEleger
     portaSuperno = int(sys.argv[1])
     print(f"porta: {portaSuperno}")
 
@@ -229,7 +235,7 @@ async def servidorSuperNo(reader, writer):
                 sair = await superno(reader, writer, addr)
             else:
                 #coordenador
-                ...
+                sair = await coordenador(reader, writer, addr)
     except (ConnectionResetError, asyncio.IncompleteReadError) as error:
         print(f"Conexão com {addr} perdida. Erro: {error}")
     except Exception as error:
@@ -261,13 +267,40 @@ async def servidorSuperNo(reader, writer):
             else:
                 print(f"Cliente {addr} não estava na lista de clientes registrados.")
 
-        try:
-            writer.close()
-            await writer.wait_closed()
-        except Exception as e:
-            print(f"Erro ao fechar writer do cliente {addr}: {e}")
-        
-        print(f"Limpeza para {addr} concluída.")
+async def coordenador(reader, writer, addr):
+    print("coordenador chamado")
+    dados = await reader.read(4096)
+
+    msg_recebida = mensagens.decodifica_mensagem(dados)
+
+    print(f"coordenado: mensage recebida -> {msg_recebida}")
+
+    if msg_recebida:
+        comando = msg_recebida.get("comando")
+
+        if comando == mensagens.CMD_SN2COORD_FINISH:
+            print(f"Supernó {addr} finalizou o registro dos clientes.")
+        elif comando == mensagens.CMD_SN2COORD_SAIDA:
+            print(f"Supernó {addr} solicitou a saída.")
+            return True
+        elif comando == mensagens.CMD_SN2COORD_PERGUNTA_ESTOU_VIVO:
+            resposta = mensagens.cria_resposta_estou_vivo()
+            writer.write(resposta.encode('utf-8'))
+            print(f"Resposta enviada. Máquina: {addr}")
+        elif comando == mensagens.CMD_SN2SN_INICIAR_ELEICAO:
+            # responde
+            print("Pediram para mim ser o coordenador, sendo que ja sou")
+            mensagem = mensagens.cria_mensagem_resposta_eleicao()
+            writer.write(mensagem.encode('utf-8'))
+            await writer.drain()
+        else:
+            # Recebe demais requisições do super nó
+            ...
+    return False
+
+async def superno(reader, writer, addr):
+    print("superno chamado")
+    dados = await reader.read(4096)
 
 async def superno(reader, writer, addr):
     dados = await reader.readuntil(b'\n')
@@ -283,6 +316,19 @@ async def superno(reader, writer, addr):
     elif comando == mensagens.CMD_SN2COORD_FINISH:
         # Caso de recebimento do pacote finish vinda de um super nó
         print(f"superno {addr} finalizou registro de clientes")
+    elif comando == mensagens.CMD_SN2SN_NOVO_COORDENADOR:
+        global portaCoordenador, ipServidor, Coord
+        print(f"Um novo nó coordenador foi eleito: {novoComando}")
+        # ipServidor = novoComando["payload"]["ip"] #trocar no lab
+        portaCoordenador = novoComando["payload"]["porta"]
+        for no in superNosVizinhos:
+            if no["info"]["porta"] == portaCoordenador: #trocar para ip no lab
+                Coord["reader"] = no["reader"]
+                Coord["writer"] = no["writer"]
+                print("achou o novo coordenador")
+
+
+        asyncio.create_task(monitorar_lider())
     elif comando == mensagens.CMD_CLIENTE2SN_BUSCA_ARQUIVO:
         # Caso de busca (solicitação de download) vinda de um cliente.
         await handle_busca_cliente(writer, novoComando)
@@ -292,6 +338,20 @@ async def superno(reader, writer, addr):
     elif comando == mensagens.CMD_CLIENTE2SN_INDEXAR_ARQUIVO:
         # Caso de um cliente avisando que possui um arquivo
         await handle_indexar_arquivo(writer, novoComando)
+    elif comando == mensagens.CMD_SN2SN_INICIAR_ELEICAO:
+        #responde
+        mensagem = mensagens.cria_mensagem_resposta_eleicao()
+        writer.write(mensagem.encode('utf-8'))
+        await writer.drain()
+
+        #chama eleição
+        if not em_eleicao:
+            print("chamada de eleição de outro superno")
+            await valentao()
+        else:
+            print("chamada de eleição de outro superno, mas ja esta em eleição")
+
+
     elif comando == mensagens.CMD_CLIENTE2SN_SAIDA:
         # Caso de um cliente avisando que está saindo
         await handle_saida_cliente(writer, novoComando)
@@ -312,6 +372,7 @@ async def NovoCliente(reader, writer, requisicao_registro):
         listaDeClientes.append(novo_cliente)
         if len(listaDeClientes) == nunClinteMax: #manda pacote finish
             await conectarComOutrosSupernos()
+            asyncio.create_task(monitorar_lider())
             msg = mensagens.cria_pacote_finish()
 
             # Envia o pacote FINISH para o coordenador
@@ -356,65 +417,162 @@ async def conectarComOutrosSupernos():
 
 
 async def monitorar_lider():
-    """
-    Verifica periodicamente se o líder está vivo E
-    processa mensagens de broadcast dele.
-    """
-    reader = Coord.get("reader")
-    writer = Coord.get("writer")
-    
-    if not reader or not writer:
-        print("[ERRO] Conexão com Coordenador não encontrada para monitorar.")
+    """Verifica periodicamente se o líder está vivo."""
+    global Coord
+    print("Iniciando monitoramento")
+    while True:
+        #Dorme pelo intervalo de verificação (ex: 5 segundos)
+        await asyncio.sleep(5)
+
+        if not isCoordenador:  # Não precisa monitorar a si mesmo
+            try:
+                print("Monitorando líder: ARE YOU ALIVE?")
+
+                #Envia a mensagem de "ping"
+                msg_ping = mensagens.cria_mensagem_alive()  # Crie esta função
+                Coord["writer"].write(msg_ping.encode('utf-8'))
+                await Coord["writer"].drain()
+
+                #Usa wait_for para esperar a resposta ("pong")
+                dados = await asyncio.wait_for(Coord["reader"].read(4096), timeout=20.0)
+
+                if not dados:
+                    raise ConnectionError("Líder fechou a conexão")
+
+                #Decodifica e verifica se é a resposta certa
+                resposta = mensagens.decodifica_mensagem(dados)
+                if resposta.get('comando') == mensagens.CMD_COORD2SN_RESPOSTA_ESTOU_VIVO:
+                    print(f"Monitorando líder: ...Líder está VIVO. Lider: {resposta["payload"]}")
+
+            except asyncio.TimeoutError:
+                #O LÍDER ESTÁ MORTO!
+                print("!!! O LÍDER MORREU (timeout) !!!")
+                await valentao()
+                return
+
+            except (ConnectionError, ConnectionResetError) as e:
+                #O LÍDER TAMBÉM ESTÁ MORTO! (Conexão caiu)
+                print(f"!!! O LÍDER MORREU (conexão perdida: {e}) !!!")
+                await valentao()
+                return
+
+        else:
+            return
+
+
+# Esta é a sua função, mas renomeada para ser a "lógica"
+async def valentao():
+    global desistoDeMeEleger, isCoordenador, em_eleicao
+
+    # --- Proteção de entrada ---
+    if isCoordenador:
+        print("Eu já sou o coordenador, não vou iniciar eleição.")
         return
 
-    print("Monitor do Coordenador iniciado (ping/listen).")
-    
-    while True:
-        if isCoordenador: # Se eu sou o coordenador, não faço nada
-            break
-            
+    async with lock:
+        if em_eleicao:
+            print("Já estou em um processo de eleição.")
+            return
+        em_eleicao = True
+
+    desistoDeMeEleger = False  # Reseta a flag para esta nova eleição
+
+    print("Começando lógica de eleição...")
+    # id_proprio = int(ipaddress.ip_address(ipLocal)) #usar no lab
+    id_proprio = portaSuperno
+
+    # Flag para saber se PELO MENOS UM "valentão" VIVO respondeu
+    recebi_ok_de_um_maior = False
+
+    # 1. Encontrar todos os vizinhos maiores
+    vizinhos_maiores = []
+    for no in superNosVizinhos:
+        # id_vizinho = int(ipaddress.ip_address(no["info"]["ip"])) #usar no lab
+        id_vizinho = no["info"]["porta"]
+        if id_proprio < id_vizinho:
+            vizinhos_maiores.append(no)
+
+    # 2. Se não há vizinhos maiores, eu ganho automaticamente
+    if not vizinhos_maiores:
+        print("Não há vizinhos maiores. Eu sou o líder.")
+        await anunciar_vitoria()
+        return
+
+    # 3. Se há vizinhos maiores, contacta-os A TODOS
+    print(f"Contactando {len(vizinhos_maiores)} vizinhos maiores...")
+    for no in vizinhos_maiores:
+        # id_vizinho = int(ipaddress.ip_address(no["info"]["ip"])) #usar no lab
+        id_vizinho = no["info"]["porta"]
+
         try:
-            # Envia um PING
-            msg_ping = mensagens.cria_mensagem_alive()
-            writer.write(msg_ping.encode('utf-8') + b'\n')
-            await writer.drain()
+            print(f"Enviando CMD_ELECTION para {id_vizinho}...")
+            mensagem = mensagens.cria_mensagem_eleicao(no["info"]["chave"])
+            no["writer"].write(mensagem.encode('utf-8'))
+            await no["writer"].drain()
 
-            dados = await asyncio.wait_for(reader.readuntil(b'\n'), timeout=10.0)
-            
+            dados = await asyncio.wait_for(no["reader"].read(4096), timeout=5.0)
+
             if not dados:
-                raise ConnectionError("Líder fechou a conexão")
-
-            msg = mensagens.decodifica_mensagem(dados)
-            if not msg:
+                print(f"Vizinho {id_vizinho} fechou a conexão.")
                 continue
 
-            comando = msg.get("comando")
+            resposta = mensagens.decodifica_mensagem(dados)
 
-            if comando == mensagens.CMD_COORD2SN_RESPOSTA_ESTOU_VIVO: # O pong
-                print(f"Monitorando líder: ...Líder está VIVO.")
-            
-            elif comando == mensagens.CMD_COORD2SN_LISTA_SUPERNOS:
-                async with lock:
-                    global ListaDeSupernos
-                    ListaDeSupernos = msg["payload"]["supernos"]
-                    await conectarComOutrosSupernos()
-                print(f"Monitorando líder: [BROADCAST] Lista de Supernós atualizada: {len(ListaDeSupernos)} nós.")
-            
-            else:
-                print(f"Monitorando líder: [MSG] Recebida msg inesperada: {comando}")
+            if resposta.get('comando') == mensagens.CMD_SN2SN_ELEICAO_INICIADO:
+                # Ele respondeu "OK", registamos isso
+                print(f"Vizinho {id_vizinho} respondeu OK.")
+
+                # Registamos que PELO MENOS UM respondeu
+                recebi_ok_de_um_maior = True
+
+                # Marcamos a desistência geral, mas NÃO paramos o loop
+                desistoDeMeEleger = True
+
+                # <<-- O 'break' FOI REMOVIDO DAQUI -->>
+                # O loop continua para contactar os outros nós maiores
 
         except asyncio.TimeoutError:
-            print("!!! O LÍDER MORREU (timeout de 10s no heartbeat) !!!")
-            # await iniciar_eleicao()
-            break # Sai do loop
+            print(f"Vizinho {id_vizinho} não respondeu (timeout). Ignorando.")
+            # Continuamos o loop, pois este "valentão" está fora do jogo
 
-        except (ConnectionError, ConnectionResetError, asyncio.IncompleteReadError) as e:
-            print(f"!!! O LÍDER MORREU (conexão perdida: {e}) !!!")
-            # await iniciar_eleicao()
-            break # Sai do loop
-        
-        # Espera 5 segundos antes de enviar o próximo ping
-        await asyncio.sleep(5)
+        except Exception as e:
+            print(f"Erro ao contactar vizinho {id_vizinho}: {e}. Assumindo que está morto.")
+            continue
+
+    # 4. Avalia o resultado (APÓS o loop ter terminado)
+    if not recebi_ok_de_um_maior:
+        # Se NINGUÉM (vivo) respondeu OK, eu ganhei
+        print("Nenhum vizinho maior respondeu OK. Serei o novo líder.")
+        await anunciar_vitoria()
+    else:
+        # Se PELO MENOS UM respondeu OK, eu perdi
+        print("Desistindo de me eleger, um nó maior está ativo.")
+        async with lock:
+            em_eleicao = False  # Reseta a flag
+
+# Você deve criar esta função
+async def anunciar_vitoria():
+    global isCoordenador, em_eleicao
+    # ...
+    isCoordenador = True
+
+    async with lock:
+        em_eleicao = False  # <-- MUITO IMPORTANTE! A eleição terminou.
+
+    # Envia CMD_VICTORY para TODOS os vizinhos
+    msg_vitoria = mensagens.cria_mensagem_vitoria(ipLocal, portaSuperno)
+
+    for no in superNosVizinhos:
+        try:
+            no["writer"].write(msg_vitoria.encode('utf-8'))
+            await no["writer"].drain()
+        except Exception as e:
+            print(f"Falha ao anunciar vitória para {no['info']['ip']}: {e}")
+
+    # Inicia o processo de replicação 2PC
+    print("Iniciando processo de replicação (2PC)...")
+    # asyncio.create_task(iniciar_replicacao_2pc())
+
 
 async def main():
     # Esta tarefa manterá o servidor de clientes/supernós rodando

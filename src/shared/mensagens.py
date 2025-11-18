@@ -35,6 +35,7 @@ CMD_SN2SN_QUERY_ARQUIVO = "SN2SN_QUERY_ARQUIVO"
 CMD_SN2SN_RESPOSTA_ARQUIVO_ACHOU = "SN2SN_RESPOSTA_ARQUIVO_ACHOU"
 CMD_SN2SN_RESPOSTA_ARQUIVO_NAO_ACHOU = "SN2SN_RESPOSTA_ARQUIVO_NAO_ACHOU"
 CMD_SN2SN_INICIAR_ELEICAO = "SN2SN_INICIAR_ELEICAO"
+CMD_SN2SN_ELEICAO_INICIADO = "CMD_SN2SN_ELEICAO_INICIADO"
 CMD_SN2SN_NOVO_COORDENADOR = "SN2SN_NOVO_COORDENADOR"
 
 # Cliente para cliente
@@ -107,11 +108,14 @@ def cria_resposta_local_arquivo(comando, nome_arquivo, info_dono):
 def cria_mensagem_eleicao(minha_chave):
     return criar_mensagem(CMD_SN2SN_INICIAR_ELEICAO, chave_remetente=minha_chave)
 
+def cria_mensagem_resposta_eleicao():
+    return criar_mensagem(CMD_SN2SN_ELEICAO_INICIADO, mensagem = "eleição foi iniciado, pode desistir")
+
+def cria_mensagem_vitoria(ip, porta):
+    return criar_mensagem(CMD_SN2SN_NOVO_COORDENADOR, ip=ip, porta=porta)
+
 def cria_mensagem_alive():
     return criar_mensagem(CMD_SN2COORD_PERGUNTA_ESTOU_VIVO, mensagem ="Iae, tu ta vivo??")
-
-def cria_mensagem_coordenador(minha_chave):
-    return criar_mensagem(CMD_SN2SN_NOVO_COORDENADOR, chave_lider=minha_chave)
 
 def cria_ack_indexacao_arquivo(nome_arquivo, status):
     return criar_mensagem(CMD_SN2CLIENTE_ACK_INDEXACAO, nome_arquivo=nome_arquivo, status=status)
