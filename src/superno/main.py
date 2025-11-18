@@ -34,7 +34,7 @@ isCoordenador = False
 desistoDeMeEleger = False
 em_eleicao = None
 
-# Lista dos arquivos pertencentes a cada cliente. Mapeia o nome do arquivo para seus "donos"
+# Lista dos arquivos pertencentes a cada cliente. Mapeia o nome do arquivo para seus donos
 indice_arquivos_local = {} 
 
 consenso_lock = asyncio.Lock()
@@ -184,7 +184,7 @@ async def iniciar_replicacao_consenso(writer_novo_superno):
                 except Exception as e:
                     print(f"[ERRO] Falha ao enviar promoção: {e}\n")
 
-                print("[MIGRAÇÃO] Redirecionando demais clientes e vizinhos para o novo Supernó...\n")
+                print("Redirecionando demais clientes e vizinhos para o novo Supernó...\n")
 
                 novo_sn_ip = cliente_escolhido["ip"]
                 novo_sn_porta = cliente_escolhido["porta"]
@@ -201,36 +201,32 @@ async def iniciar_replicacao_consenso(writer_novo_superno):
                             print(f"Mandando cliente {cliente['porta']} ir para {novo_sn_porta}...\n")
                             cliente["writer"].write(msg_redirect.encode('utf-8') + b'\n')
                             await cliente["writer"].drain()
-                            # Opcional: fechar a conexão do lado do servidor ou esperar o cliente fechar
                         except Exception as e:
                             print(f"Erro ao redirecionar cliente: {e}\n")
 
                     listaDeClientes.clear()
 
-                print("[MIGRAÇÃO] Redirecionando VIZINHOS (Supernós) para o novo Supernó...\n")
+                print("Redirecionando VIZINHOS (Supernós) para o novo Supernó...\n")
                 msg_update_vizinho = mensagens.cria_msg_redirect_vizinho(novo_sn_ip, novo_sn_porta)
 
-                # Percorre a lista de Supernós vizinhos (Ex: SN1)
+                # Percorre a lista de Supernós vizinhos
                 for vizinho in superNosVizinhos:
                     try:
                         print(f"Avisando vizinho {vizinho['info']['porta']} para conectar em {novo_sn_porta}...\n")
                         vizinho["writer"].write(msg_update_vizinho.encode('utf-8') + b'\n')
                         await vizinho["writer"].drain()
                         
-                        # Opcional: Não fechamos a conexão aqui porque este vizinho 
-                        # ainda precisa deste socket para falar com o Coordenador (nós).
-                        # Ele quem deve atualizar a lista dele de "Vizinhos P2P".
                     except Exception as e:
                         print(f"Erro ao notificar vizinho: {e}\n")
                 
                 # Limpa a lista de vizinhos P2P deste nó, pois agora ele é Coordenador
-                # e não deve mais participar da busca de arquivos (query flooding)
+                # e não deve mais participar da busca de arquivos
                 superNosVizinhos.clear()
-                print("[STATUS] Agora sou apenas Coordenador. Lista de vizinhos P2P limpa.\n")
+                print("Agora sou apenas Coordenador. Lista de vizinhos P2P limpa.\n")
             else:
                 print("Nenhum cliente disponível para promover.\n")
         else:
-            print(f"Consenso - {tid[:6]}] Fase 2: Voto NÃO. Enviando ABORT.\n")
+            print(f"Consenso - {tid[:6]} Fase 2: Voto NÃO. Enviando ABORT.\n")
             msg_abort = mensagens.cria_msg_global_abort(tid)
             async with lock:
                 for cliente in listaDeClientes:
@@ -622,13 +618,11 @@ async def superno(reader, writer, addr):
         
         print(f"\n[ATUALIZAÇÃO] O Coordenador pediu para conectar no novo Supernó: {novo_ip}:{nova_porta}")
         
-        # 1. Conecta no Novo Supernó
+        # Conecta no Novo Supernó
         try:
             reader_novo, writer_novo = await asyncio.open_connection(novo_ip, nova_porta)
             
             # Cria a estrutura do novo vizinho
-            # Nota: A chave real viria num handshake, mas podemos usar temp ou pedir depois
-            # Aqui simplificamos adicionando a conexão
             novo_vizinho = {
                 "reader": reader_novo, 
                 "writer": writer_novo, 
@@ -639,18 +633,14 @@ async def superno(reader, writer, addr):
             
             # Inicia a escuta desse novo vizinho
             asyncio.create_task(servidorSuperNo(reader_novo, writer_novo))
-            print(f"[SUCESSO] Conectado ao novo vizinho {nova_porta}.")
+            print(f"Conectado ao novo vizinho {nova_porta}.")
             
-            # 2. Remove o Coordenador (Remetente desta msg) da lista de VIZINHOS P2P
-            # (Mas mantém a conexão física viva no objeto 'Coord' para heartbeats)
-            # A variável 'writer' aqui é a conexão com o Coordenador
+            # Remove o Coordenador (Remetente desta msg) da lista de VIZINHOS P2P
             
             # Filtra a lista mantendo apenas quem NÃO é o remetente desta mensagem
             superNosVizinhos = [sn for sn in superNosVizinhos if sn["writer"] != writer]
-
-            print(f'SUPERNOS VIZINHOS {superNosVizinhos}')
             
-            print("[INFO] Coordenador removido da lista de vizinhos de busca (Query).")
+            print("Coordenador removido da lista de vizinhos de busca (Query).")
 
         except Exception as e:
             print(f"[ERRO] Falha ao conectar no novo vizinho: {e}")
@@ -799,7 +789,7 @@ async def valentao():
     # Flag para saber se PELO MENOS UM "valentão" VIVO respondeu
     recebi_ok_de_um_maior = False
 
-    # 1. Encontrar todos os vizinhos maiores
+    # Encontrar todos os vizinhos maiores
     vizinhos_maiores = []
     for no in superNosVizinhos:
         # id_vizinho = int(ipaddress.ip_address(no["info"]["ip"])) #usar no lab
@@ -807,13 +797,13 @@ async def valentao():
         if id_proprio < id_vizinho:
             vizinhos_maiores.append(no)
 
-    # 2. Se não há vizinhos maiores, eu ganho automaticamente
+    # Se não há vizinhos maiores, esse aqui ganha automaticamente
     if not vizinhos_maiores:
         print("Não há vizinhos maiores. Eu sou o líder.\n")
         await anunciar_vitoria()
         return
 
-    # 3. Se há vizinhos maiores, contacta-os A TODOS
+    # Se há vizinhos maiores, contacta-os A TODOS
     print(f"Contactando {len(vizinhos_maiores)} vizinhos maiores...\n")
     for no in vizinhos_maiores:
         # id_vizinho = int(ipaddress.ip_address(no["info"]["ip"])) #usar no lab
@@ -844,38 +834,33 @@ async def valentao():
                 desistoDeMeEleger = True
                 break
 
-                # <<-- O 'break' FOI REMOVIDO DAQUI -->>
-                # O loop continua para contactar os outros nós maiores
-
         except asyncio.TimeoutError:
             print(f"Vizinho {id_vizinho} não respondeu (timeout). Ignorando.\n")
-            # Continuamos o loop, pois este "valentão" está fora do jogo
+            # Continuamos o loop, pois este valentão está fora do jogo
 
         except Exception as e:
             print(f"Erro ao contactar vizinho {id_vizinho}: {e}. Assumindo que está morto.\n")
             continue
 
-    # 4. Avalia o resultado (APÓS o loop ter terminado)
+    # Avalia o resultado APÓS o loop ter terminado
     if not recebi_ok_de_um_maior:
-        # Se NINGUÉM (vivo) respondeu OK, eu ganhei
+        # Se NINGUÉM vivo respondeu OK, eu ganhei
         print("Nenhum vizinho maior respondeu OK. Serei o novo líder.\n")
         await anunciar_vitoria()
     else:
         # Se PELO MENOS UM respondeu OK, eu perdi
         print("Desistindo de me eleger, um nó maior está ativo.\n")
         async with lock:
-            em_eleicao = False  # Reseta a flag
+            em_eleicao = False
 
-# Você deve criar esta função
 async def anunciar_vitoria():
     global isCoordenador, em_eleicao
-    # ...
     isCoordenador = True
 
     async with lock:
-        em_eleicao = False  # <-- MUITO IMPORTANTE! A eleição terminou.
+        em_eleicao = False # Eleição terminou
 
-    # Envia CMD_VICTORY para TODOS os vizinhos
+    # Envia vitória para TODOS os vizinhos
     msg_vitoria = mensagens.cria_mensagem_vitoria(ipLocal, portaSuperno)
 
     for no in superNosVizinhos:
