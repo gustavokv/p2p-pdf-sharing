@@ -30,20 +30,19 @@ PROJECT_PATH="/home/AD/rgm47006/Documentos/p2p-pdf-sharing"
 TERMINAL_CMD="gnome-terminal"
 
 # --- MAPA DA REDE ---
-#l1m11u
-IP_COORD="172.26.1.185" # IP desta máquina (Coordenador)
+IP_COORD="l4m03u.lab4" # IP desta máquina (Coordenador)
 
 # Supernós (Hostnames e Portas)
-IP_SN1="l1m19u"; PORT_SN1="8001"
-IP_SN2="l1m25u"; PORT_SN2="8002"
-IP_SN3="192.168.5.101"; PORT_SN3="8003"
-IP_SN4="192.168.5.102"; PORT_SN4="8004"
+IP_SN1="l1m30u.lab1"; PORT_SN1="8001"
+IP_SN2="l1m31u.lab1"; PORT_SN2="8002"
+IP_SN3="l4m02u.lab4"; PORT_SN3="8003"
+IP_SN4="l4m17u.lab4"; PORT_SN4="8004"
 
 # Clientes (Hostnames)
-CLIENTES_SN1=("l1m21u" "l1m15u" "l1m14u")
-CLIENTES_SN2=("l1m30u" "l1m27u" "l1m13u")
-CLIENTES_SN3=("192.168.5.150" "192.168.5.151" "192.168.5.152")
-CLIENTES_SN4=("192.168.5.153" "192.168.5.154" "192.168.5.155")
+CLIENTES_SN1=("l1m13u.lab1" "l1m14u.lab1" "l1m15u.lab1")
+CLIENTES_SN2=("l1m19u.lab1" "l1m21u.lab1" "l1m27u.lab1")
+CLIENTES_SN3=("l4m04u.lab4" "l4m05u.lab4" "l4m06u.lab4")
+CLIENTES_SN4=("l4m08u.lab4" "l4m21u.lab4" "l4m22u.lab4")
 # --- FIM DO MAPA ---
 
 
@@ -89,7 +88,7 @@ CMD_SN1="bash -c \"
     read
 \""
 $TERMINAL_CMD -- bash -c "$CMD_SN1" &
-sleep 1 # Pausa para o terminal abrir
+sleep 20 # Pausa para o terminal abrir
 
 # --- Supernó 2 ---
 echo "  -> Abrindo terminal SSH para Supernó 2 ($IP_SN2)..."
@@ -108,7 +107,7 @@ CMD_SN2="bash -c \"
     read
 \""
 $TERMINAL_CMD -- bash -c "$CMD_SN2" &
-sleep 1
+sleep 20
 
 # --- Supernó 3 ---
 echo "  -> Abrindo terminal SSH para Supernó 3 ($IP_SN3)..."
@@ -127,7 +126,7 @@ CMD_SN3="bash -c \"
     read
 \""
 $TERMINAL_CMD -- bash -c "$CMD_SN3" &
-sleep 1
+sleep 20
 
 # --- Supernó 4 ---
 echo "  -> Abrindo terminal SSH para Supernó 4 ($IP_SN4)..."
@@ -148,97 +147,112 @@ CMD_SN4="bash -c \"
 $TERMINAL_CMD -- bash -c "$CMD_SN4" &
 
 echo "Comandos dos supernós enviados. Aguardando 10 segundos para se registrarem..."
-sleep 10
+sleep 20
 
 # 3. Iniciar os Clientes (Remotamente, em terminais locais)
 echo -e "\n[FASE 3/3] Iniciando 12 Clientes remotamente (monitorados)..."
+i=1
 
 echo "  Iniciando clientes do Supernó 1 ($IP_SN1)..."
 for ip in "${CLIENTES_SN1[@]}"; do
-    echo "  -> Abrindo terminal SSH para Cliente ($ip)..."
-    CMD_REMOTO_CLIENTE="./iniciar-no.sh cliente $ip $IP_SN1 $PORT_SN1"
+    let "CLIENT_PEER_PORT = BASE_PEER_PORT + i" # (9001, 9002, 9003)
+    echo "  -> Abrindo terminal SSH para Cliente ($ip) (Porta P2P: $CLIENT_PEER_PORT)..."
+    
+    # Define o comando que será executado remotamente
+    CMD_LOCAL_CLIENTE="export PEER_PORT=$CLIENT_PEER_PORT; ./iniciar-no.sh cliente $ip $IP_SN1 $PORT_SN1"
     
     CMD_TO_RUN="bash -c \"
-        echo '--- CONECTANDO AO CLIENTE (IP: $ip) PARA SUPERNÓ $IP_SN1 ---';
+        echo '--- CONECTANDO AO CLIENTE (IP: $ip) (P2P: $CLIENT_PEER_PORT) PARA SUPERNÓ $IP_SN1 ---';
         ssh $SSH_USER@$ip '
             echo --- CONEXÃO SSH ESTABELECIDA ---;
             cd $PROJECT_PATH;
             chmod +x iniciar-no.sh;
-            echo --- INICIANDO SCRIPT: $CMD_REMOTO_CLIENTE ---;
-            $CMD_REMOTO_CLIENTE;
+            
+            echo --- INICIANDO SCRIPT: $CMD_LOCAL_CLIENTE ---;
+            $CMD_LOCAL_CLIENTE;
         ';
         echo;
-        echo '--- SESSÃO SSH (CLIENTE $ip) FINALIZADA. Pressione [Enter] para fechar. ---';
+        echo '--- SESSÃO SSH (CLIENTE $ip) (P2P: $CLIENT_PEER_PORT) FINALIZADA. Pressione [Enter] para fechar. ---';
         read
     \""
     $TERMINAL_CMD -- bash -c "$CMD_TO_RUN" &
-    sleep 1 # Pequena pausa para os terminais abrirem
+    let "i=i+1" 
+    sleep 10 # Pequena pausa para os terminais abrirem
 done
 
 echo "  Iniciando clientes do Supernó 2 ($IP_SN2)..."
 for ip in "${CLIENTES_SN2[@]}"; do
-    echo "  -> Abrindo terminal SSH para Cliente ($ip)..."
-    CMD_REMOTO_CLIENTE="./iniciar-no.sh cliente $ip $IP_SN2 $PORT_SN2"
+    let "CLIENT_PEER_PORT = BASE_PEER_PORT + i" # (9004, 9005, 9006)
+    echo "  -> Abrindo terminal SSH para Cliente ($ip) (Porta P2P: $CLIENT_PEER_PORT)..."
+    CMD_LOCAL_CLIENTE="export PEER_PORT=$CLIENT_PEER_PORT; ./iniciar-no.sh cliente $ip $IP_SN2 $PORT_SN2"
 
     CMD_TO_RUN="bash -c \"
-        echo '--- CONECTANDO AO CLIENTE (IP: $ip) PARA SUPERNÓ $IP_SN2 ---';
+        echo '--- CONECTANDO AO CLIENTE (IP: $ip) (P2P: $CLIENT_PEER_PORT) PARA SUPERNÓ $IP_SN2 ---';
         ssh $SSH_USER@$ip '
             echo --- CONEXÃO SSH ESTABELECIDA ---;
             cd $PROJECT_PATH;
             chmod +x iniciar-no.sh;
-            echo --- INICIANDO SCRIPT: $CMD_REMOTO_CLIENTE ---;
-            $CMD_REMOTO_CLIENTE;
+            
+            echo --- INICIANDO SCRIPT: $CMD_LOCAL_CLIENTE ---;
+            $CMD_LOCAL_CLIENTE;
         ';
         echo;
-        echo '--- SESSÃO SSH (CLIENTE $ip) FINALIZADA. Pressione [Enter] para fechar. ---';
+        echo '--- SESSÃO SSH (CLIENTE $ip) (P2P: $CLIENT_PEER_PORT) FINALIZADA. Pressione [Enter] para fechar. ---';
         read
     \""
     $TERMINAL_CMD -- bash -c "$CMD_TO_RUN" &
-    sleep 1
+    let "i=i+1" 
+    sleep 10
 done
 
 echo "  Iniciando clientes do Supernó 3 ($IP_SN3)..."
 for ip in "${CLIENTES_SN3[@]}"; do
-    echo "  -> Abrindo terminal SSH para Cliente ($ip)..."
-    CMD_REMOTO_CLIENTE="./iniciar-no.sh cliente $ip $IP_SN3 $PORT_SN3"
+    let "CLIENT_PEER_PORT = BASE_PEER_PORT + i" # (9007, 9008, 9009)
+    echo "  -> Abrindo terminal SSH para Cliente ($ip) (Porta P2P: $CLIENT_PEER_PORT)..."
+    CMD_LOCAL_CLIENTE="export PEER_PORT=$CLIENT_PEER_PORT; ./iniciar-no.sh cliente $ip $IP_SN3 $PORT_SN3"
 
     CMD_TO_RUN="bash -c \"
-        echo '--- CONECTANDO AO CLIENTE (IP: $ip) PARA SUPERNÓ $IP_SN3 ---';
+        echo '--- CONECTANDO AO CLIENTE (IP: $ip) (P2P: $CLIENT_PEER_PORT) PARA SUPERNÓ $IP_SN3 ---';
         ssh $SSH_USER@$ip '
             echo --- CONEXÃO SSH ESTABELECIDA ---;
             cd $PROJECT_PATH;
             chmod +x iniciar-no.sh;
-            echo --- INICIANDO SCRIPT: $CMD_REMOTO_CLIENTE ---;
-            $CMD_REMOTO_CLIENTE;
+            
+            echo --- INICIANDO SCRIPT: $CMD_LOCAL_CLIENTE ---;
+            $CMD_LOCAL_CLIENTE;
         ';
         echo;
-        echo '--- SESSÃO SSH (CLIENTE $ip) FINALIZADA. Pressione [Enter] para fechar. ---';
+        echo '--- SESSÃO SSH (CLIENTE $ip) (P2P: $CLIENT_PEER_PORT) FINALIZADA. Pressione [Enter] para fechar. ---';
         read
     \""
     $TERMINAL_CMD -- bash -c "$CMD_TO_RUN" &
-    sleep 1
+    let "i=i+1" 
+    sleep 10
 done
 
 echo "  Iniciando clientes do Supernó 4 ($IP_SN4)..."
 for ip in "${CLIENTES_SN4[@]}"; do
-    echo "  -> Abrindo terminal SSH para Cliente ($ip)..."
-    CMD_REMOTO_CLIENTE="./iniciar-no.sh cliente $ip $IP_SN4 $PORT_SN4"
+     let "CLIENT_PEER_PORT = BASE_PEER_PORT + i" # (9010, 9011, 9012)
+    echo "  -> Abrindo terminal SSH para Cliente ($ip) (Porta P2P: $CLIENT_PEER_PORT)..."
+    CMD_LOCAL_CLIENTE="export PEER_PORT=$CLIENT_PEER_PORT; ./iniciar-no.sh cliente $ip $IP_SN4 $PORT_SN4"
 
     CMD_TO_RUN="bash -c \"
-        echo '--- CONECTANDO AO CLIENTE (IP: $ip) PARA SUPERNÓ $IP_SN4 ---';
+        echo '--- CONECTANDO AO CLIENTE (IP: $ip) (P2P: $CLIENT_PEER_PORT) PARA SUPERNÓ $IP_SN4 ---';
         ssh $SSH_USER@$ip '
             echo --- CONEXÃO SSH ESTABELECIDA ---;
             cd $PROJECT_PATH;
             chmod +x iniciar-no.sh;
-            echo --- INICIANDO SCRIPT: $CMD_REMOTO_CLIENTE ---;
-            $CMD_REMOTO_CLIENTE;
+            
+            echo --- INICIANDO SCRIPT: $CMD_LOCAL_CLIENTE ---;
+            $CMD_LOCAL_CLIENTE;
         ';
         echo;
-        echo '--- SESSÃO SSH (CLIENTE $ip) FINALIZADA. Pressione [Enter] para fechar. ---';
+        echo '--- SESSÃO SSH (CLIENTE $ip) (P2P: $CLIENT_PEER_PORT) FINALIZADA. Pressione [Enter] para fechar. ---';
         read
     \""
     $TERMINAL_CMD -- bash -c "$CMD_TO_RUN" &
-    sleep 1
+    let "i=i+1" 
+    sleep 10
 done
 
 echo -e "\n============================================="
