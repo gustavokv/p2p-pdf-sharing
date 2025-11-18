@@ -1,6 +1,7 @@
 import asyncio
 import sys
 import uuid
+import json
 import os      
 from src.shared import mensagens
 
@@ -22,6 +23,136 @@ PASTA_ARQUIVOS = "shared_pdfs"
 reader_sn = None
 writer_sn = None
 chave_identificadora = None
+
+global_reply_queue = asyncio.Queue()
+
+async def handle_pedido_votacao(requisicao):
+    """Chamado quando o supernó pede para votar no consenso. """
+    print("\nConsenso - Pedido de Votação recebido do Supernó.")
+    
+    try:
+        tid = requisicao["payload"]["tid"]
+        indice_recebido = requisicao["payload"]["indice"]
+        soma_mestre = requisicao["payload"]["soma"]
+
+        # Cliente calcula sua própria soma dos tamanhos dos arquivos
+        soma_cliente = 0
+        for donos_lista in indice_recebido.values():
+            for dono in donos_lista:
+                # O 'valor' é o tamanho do arquivo
+                soma_cliente += dono.get("valor", 0) 
+        
+        # Compara as somas e vota
+        if soma_cliente == soma_mestre:
+            print(f"Consenso - Verificação OK. Soma deu {soma_cliente}. Votando SIM.")
+            msg_voto = mensagens.cria_voto_sim(tid)
+        else:
+            print(f"Consenso - FALHA NA SOMA! Mestre deu {soma_mestre}, Cliente deu {soma_cliente}. Votando NÃO.")
+            msg_voto = mensagens.cria_voto_nao(tid)
+        
+        writer_sn.write(msg_voto.encode('utf-8') + b'\n')
+        await writer_sn.drain()
+        
+    except Exception as e:
+        print(f"Consenso -  Erro ao processar voto: {e}")
+
+async def ouvir_superno_loop():
+    """
+    Tarefa dedicada a ouvir todas as mensagens do Supernó.
+    """
+    global reader_sn
+    global ipSuperno, portaSuperno
+    print("Ouvinte do Supernó iniciado!")
+    
+    try:
+        while True:
+            dados = await reader_sn.readuntil(b'\n')
+            msg = mensagens.decodifica_mensagem(dados)
+            if not msg:
+                continue
+
+            comando = msg.get("comando")
+
+            # Lógica de 2PC 
+            if comando == mensagens.CMD_SN2CLIENTE_PEDIDO_VOTACAO:
+                await handle_pedido_votacao(msg)
+            elif comando == mensagens.CMD_SN2CLIENTE_GLOBAL_COMMIT:
+                print(f"\nConsenso - Transação {msg['payload']['tid'][:6]} COMITADA.")
+            elif comando == mensagens.CMD_SN2CLIENTE_GLOBAL_ABORT:
+                print(f"\nConsenso - Transação {msg['payload']['tid'][:6]} ABORTADA.")
+            elif comando == mensagens.CMD_SN2CLIENTE_PROMOCAO:
+                print("\n" + "="*40)
+                print("!!! RECEBI ORDEM DE PROMOÇÃO: VIRANDO SUPERNÓ !!!")
+                print("="*40)
+                
+                # Salva o índice recebido em um arquivo temp para o novo supernó carregar ao iniciar.
+                novo_indice = msg.get("payload", {}).get("indice")
+                with open("indice_replicado.json", "w") as f:
+                    json.dump(novo_indice, f)
+
+                # Fechar conexões
+                if writer_sn:
+                    writer_sn.close()
+                
+                # Substitui o processo atual pelo Supernó. Argumentos: python, superno.py, <PORTA_ATUAL>
+                python_exe = sys.executable
+                script_superno = "src/superno/main.py"
+                
+                print(f"Reiniciando como Supernó na porta {minhaPortaPeer}...")
+                
+                # Define a porta do Coordenador como a porta do Supernó que está nos promovendo.
+                os.environ['COORDINATOR_PORT'] = str(portaSuperno)
+
+                # Isso mata o cliente e sobe o supernó no mesmo terminal
+                os.execl(python_exe, python_exe, script_superno, str(minhaPortaPeer))
+            elif comando == mensagens.CMD_SN2CLIENTE_REDIRECT:
+                novo_ip = msg["payload"]["ip"]
+                nova_porta = msg["payload"]["porta"]
+                print(f"\nSupernó ordenou migração para {novo_ip}:{nova_porta}...")
+                
+                # Fecha conexão atual
+                if writer_sn:
+                    writer_sn.close()
+                    await writer_sn.wait_closed()
+                
+                # Atualiza globais
+                ipSuperno = novo_ip
+                portaSuperno = nova_porta
+
+                print("Aguardando 3 segundos para o novo Supernó inicializar...")
+                await asyncio.sleep(3.0)
+                
+                # Reconecta no novo Supernó
+                print(f"Conectando ao novo Supernó...")
+                try:
+                    # Tenta registrar com retentativa simples
+                    sucesso = False
+                    for i in range(3):
+                        try:
+                            if await registro():
+                                sucesso = True
+                                print("Migração concluída com sucesso.")
+                                break
+                        except Exception as e:
+                            print(f"Tentativa {i+1} falhou: {e}. Retentando em 1s...")
+                            await asyncio.sleep(1)
+                    
+                    if not sucesso:
+                        print("Falha definitiva na migração.")
+
+                except Exception as e:
+                    print(f"Erro fatal na migração: {e}")
+            else:
+                await global_reply_queue.put(msg) 
+
+    except (asyncio.IncompleteReadError, ConnectionError) as e:
+        print(f"\n[ERRO] Conexão com Supernó perdida (no ouvinte): {e}")
+    except asyncio.CancelledError:
+        pass # Encerramento normal
+    except Exception as e:
+        print(f"\n[ERRO] Erro no ouvinte do Supernó: {e}")
+    finally:
+        print("Ouvinte do Supernó encerrado.")
 
 async def obter_lista_supernos():
     """Conecta-se ao Coordenador para obter a lista de supernós ativos."""
@@ -141,9 +272,8 @@ async def handle_download_request(reader_peer, writer_peer):
                 # Sinaliza para o outro lado que não há mais dados (Envia um pacote FIN).
                 if writer_peer.can_write_eof():
                     writer_peer.write_eof()
-                    await writer_peer.drain()
 
-                await reader_peer.read()
+                await writer_peer.drain()
 
             except Exception as e:
                 print(f"Erro durante a transferência para {addr_peer}: {e}")
@@ -157,6 +287,7 @@ async def handle_download_request(reader_peer, writer_peer):
     except Exception as e:
         print(f"Erro inesperado com {addr_peer}: {e}")
     finally:
+        await asyncio.sleep(0.1) # Garante que o FIN será enviado
         if writer_peer and not writer_peer.is_closing():
             writer_peer.close()
             await writer_peer.wait_closed()
@@ -181,8 +312,10 @@ async def enviar_arquivo_possuido(nome_arquivo):
     writer_sn.write(msg.encode('utf-8') + b'\n')
     await writer_sn.drain()
 
-    dados = await reader_sn.readuntil(b'\n')
-    resposta = mensagens.decodifica_mensagem(dados)
+    print("Aguardando ACK da indexação...")
+    resposta = await global_reply_queue.get()
+    global_reply_queue.task_done()
+
     print(f"[Supernó]: {resposta}")
 
 
@@ -198,8 +331,11 @@ async def buscar_arquivo(nome_arquivo):
     writer_sn.write(msg.encode('utf-8') + b'\n')
     await writer_sn.drain()
 
-    dados = await reader_sn.readuntil(b'\n')
-    resposta = mensagens.decodifica_mensagem(dados)
+    print("Aguardando resposta da busca...")
+
+    resposta = await global_reply_queue.get()
+    global_reply_queue.task_done()
+
     print(f"[Supernó]: {resposta}")
 
     comando = resposta.get("comando")
@@ -220,6 +356,7 @@ async def buscar_arquivo(nome_arquivo):
         escolha = escolha_raw.strip().lower()
         if escolha == 's':
             await realizar_download(nome_arquivo, ip_dono, porta_dono)
+            await enviar_arquivo_possuido(nome_arquivo) # Agora ele possui também o arquivo, pode ceder à outros clientes
         else:
             print("Download cancelado.")
             
@@ -260,11 +397,15 @@ async def realizar_download(nome_arquivo, ip_dono, porta_dono):
         total_bytes = 0
         with open(caminho_arquivo, 'wb') as f:
             while True:
-                bloco = await reader_peer.read(4096)
-                if not bloco:
-                    break # Transferência concluída
-                f.write(bloco)
-                total_bytes += len(bloco)
+                try:
+                    bloco = await reader_peer.read(4096)
+                    if not bloco:
+                        break
+                    total_bytes += len(bloco)
+                    # Escrita não bloqueante
+                    await asyncio.to_thread(f.write, bloco)
+                except asyncio.IncompleteReadError:
+                    break
         
         print(f"\nDownload de '{nome_arquivo}' concluído! ({total_bytes} bytes recebidos).")
         print(f"Arquivo salvo em: {caminho_arquivo}")
@@ -338,6 +479,7 @@ async def main():
     
     servidor_peer_task = None
     menu_task = None
+    ouvinte_sn_task = None
     
     try:
         static_ip = os.environ.get("SUPERNODE_IP")
@@ -377,10 +519,11 @@ async def main():
         
         # Cria as tarefas paralelas
         servidor_peer_task = asyncio.create_task(servidor_peer.serve_forever())
+        ouvinte_sn_task = asyncio.create_task(ouvir_superno_loop())
         menu_task = asyncio.create_task(menu_loop())
         
         # Roda o menu e o servidor P2P ao mesmo tempo
-        tasks = {menu_task, servidor_peer_task}
+        tasks = {menu_task, servidor_peer_task, ouvinte_sn_task}
         done, pending = await asyncio.wait(
             tasks, 
             return_when=asyncio.FIRST_COMPLETED
@@ -396,6 +539,8 @@ async def main():
             menu_task.cancel()
         if servidor_peer_task:
             servidor_peer_task.cancel()
+        if ouvinte_sn_task:
+            ouvinte_sn_task.cancel()
         
         # Espera as tarefas serem canceladas
         await asyncio.sleep(0.1) 
