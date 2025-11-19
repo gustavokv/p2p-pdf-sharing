@@ -1,5 +1,6 @@
 import asyncio
 import ipaddress
+import socket
 import sys
 import json
 import uuid
@@ -165,83 +166,73 @@ async def iniciar_replicacao_consenso(writer_novo_superno):
                     indice=indice_arquivos_local
                 )
                 
+                sucesso_promocao = False
                 try:
                     cliente_escolhido["writer"].write(msg_promo.encode('utf-8') + b'\n')
                     await cliente_escolhido["writer"].drain()
                     print("Ordem enviada. O cliente deve reiniciar como Supernó.\n")
+                    sucesso_promocao = True
+                except Exception as e:
+                    print(f"[ERRO] Falha ao enviar promoção: {e}\n")
 
-                    print("Redirecionando outros clientes...\n")
-                    msg_redirect = mensagens.criar_mensagem("SN2CLIENTE_REDIRECT", ip=cliente_escolhido["ip"], porta=cliente_escolhido["porta"])
+                # -Se promoveu, redireciona os clientes ao novo supernó
+                if sucesso_promocao:
+                    print("Redirecionando demais clientes para o novo Supernó...\n")
+
+                    novo_sn_ip = cliente_escolhido["ip"]
+                    novo_sn_porta = cliente_escolhido["porta"]
+                    
+                    msg_redirect = mensagens.cria_msg_redirect(novo_sn_ip, novo_sn_porta)
 
                     async with lock:
-                        # Cria uma lista temporária para iterar sem modificar a original durante o loop
+                        # Filtra a lista para pegar todos MENOS o escolhido
                         clientes_para_migrar = [c for c in listaDeClientes if c != cliente_escolhido]
                         
                         for cliente in clientes_para_migrar:
                             try:
-                                print(f"Mandando cliente {cliente['porta']} ir para {cliente_escolhido['porta']}...\n")
+                                print(f"Mandando cliente {cliente['porta']} ir para {novo_sn_porta}...\n")
                                 cliente["writer"].write(msg_redirect.encode('utf-8') + b'\n')
                                 await cliente["writer"].drain()
                             except Exception as e:
                                 print(f"Erro ao redirecionar cliente {cliente['porta']}: {e}\n")
                         
-                        # Limpa a lista local (eles vão sair)
+                        # Limpa a lista local agora que todos foram avisados
                         listaDeClientes.clear()
-                except Exception as e:
-                    print(f"[ERRO] Falha ao enviar promoção: {e}\n")
 
-                print("Redirecionando demais clientes e vizinhos para o novo Supernó...\n")
+                    print("Redirecionando VIZINHOS (Supernós) para o novo Supernó...\n")
+                    novo_sn_ip_viz = cliente_escolhido["ip"]
+                    novo_sn_porta_viz = cliente_escolhido["porta"]
 
-                novo_sn_ip = cliente_escolhido["ip"]
-                novo_sn_porta = cliente_escolhido["porta"]
-                
-                msg_redirect = mensagens.cria_msg_redirect(novo_sn_ip, novo_sn_porta)
-                
-                async with lock:
-                    for cliente in listaDeClientes:
-                        # Não redireciona o próprio escolhido (ele já recebeu a promoção)
-                        if cliente == cliente_escolhido:
-                            continue
-                            
+                    msg_update_vizinho = mensagens.cria_msg_redirect_vizinho(
+                        novo_sn_ip_viz, 
+                        novo_sn_porta_viz,
+                        ipLocal, # Old IP (Eu mesmo, que virei Coord)
+                        portaSuperno # Old Porta
+                    )
+
+                    # Percorre a lista de Supernós vizinhos
+                    for vizinho in superNosVizinhos:
                         try:
-                            print(f"Mandando cliente {cliente['porta']} ir para {novo_sn_porta}...\n")
-                            cliente["writer"].write(msg_redirect.encode('utf-8') + b'\n')
-                            await cliente["writer"].drain()
+                            print(f"Avisando vizinho {vizinho['info']['porta']} para conectar em {novo_sn_porta_viz}...\n")
+                            vizinho["writer"].write(msg_update_vizinho.encode('utf-8') + b'\n')
+                            await vizinho["writer"].drain()
+                            
                         except Exception as e:
-                            print(f"Erro ao redirecionar cliente: {e}\n")
-
-                    listaDeClientes.clear()
-
-                print("Redirecionando VIZINHOS (Supernós) para o novo Supernó...\n")
-                msg_update_vizinho = mensagens.cria_msg_redirect_vizinho(
-                    novo_sn_ip, 
-                    novo_sn_porta,
-                    ipLocal, # Old IP (Eu mesmo, que virei Coord)
-                    portaSuperno # Old Porta
-                )
-
-                # Percorre a lista de Supernós vizinhos
-                for vizinho in superNosVizinhos:
-                    try:
-                        print(f"Avisando vizinho {vizinho['info']['porta']} para conectar em {novo_sn_porta}...\n")
-                        vizinho["writer"].write(msg_update_vizinho.encode('utf-8') + b'\n')
-                        await vizinho["writer"].drain()
-                        
-                    except Exception as e:
-                        print(f"Erro ao notificar vizinho: {e}\n")
-                
-                # Limpa a lista de vizinhos P2P deste nó, pois agora ele é Coordenador
-                # e não deve mais participar da busca de arquivos
-                superNosVizinhos.clear()
-                print("Agora sou apenas Coordenador. Lista de vizinhos P2P limpa.\n")
-            else:
-                print("Nenhum cliente disponível para promover.\n")
+                            print(f"Erro ao notificar vizinho: {e}\n")
+                    
+                    # Limpa a lista de vizinhos P2P deste nó, pois agora ele é Coordenador
+                    # e não deve mais participar da busca de arquivos
+                    superNosVizinhos.clear()
+                    print("Agora sou apenas Coordenador. Lista de vizinhos P2P limpa.\n")
+                else:
+                    print("Nenhum cliente disponível para promover.\n")
         else:
             print(f"Consenso - {tid[:6]} Fase 2: Voto NÃO. Enviando ABORT.\n")
             msg_abort = mensagens.cria_msg_global_abort(tid)
             async with lock:
                 for cliente in listaDeClientes:
                     cliente["writer"].write(msg_abort.encode('utf-8') + b'\n')
+                    await cliente["writer"].drain()
 
     except Exception as e:
         print(f"Consenso - {tid[:6]}] Erro fatal no 2PC: {e}\n")
@@ -828,7 +819,8 @@ async def valentao():
     desistoDeMeEleger = False  # Reseta a flag para esta nova eleição
 
     print("Começando lógica de eleição...\n")
-    id_proprio = int(ipaddress.ip_address(ipLocal)) #usar no lab
+    ip_resolvido_proprio = socket.gethostbyname(ipLocal)
+    id_proprio = int(ipaddress.ip_address(ip_resolvido_proprio)) #usar no lab
     #id_proprio = portaSuperno
 
     # Flag para saber se PELO MENOS UM "valentão" VIVO respondeu
@@ -837,8 +829,9 @@ async def valentao():
     # Encontrar todos os vizinhos maiores
     vizinhos_maiores = []
     for no in superNosVizinhos:
-        id_vizinho = int(ipaddress.ip_address(no["info"]["ip"])) #usar no lab
-        # id_vizinho = no["info"]["porta"]
+        ip_resolvido_vizinho = socket.gethostbyname(no["info"]["ip"])
+        id_vizinho = int(ipaddress.ip_address(ip_resolvido_vizinho)) #usar no lab
+        #id_vizinho = no["info"]["porta"]
         if id_proprio < id_vizinho:
             vizinhos_maiores.append(no)
 
@@ -851,11 +844,10 @@ async def valentao():
     # Se há vizinhos maiores, contacta-os A TODOS
     print(f"Contactando {len(vizinhos_maiores)} vizinhos maiores...\n")
     for no in vizinhos_maiores:
-        id_vizinho = int(ipaddress.ip_address(no["info"]["ip"])) #usar no lab
-        #id_vizinho = no["info"]["porta"]
+        id_vizinho_print = no["info"]["ip"] #usar no lab
 
         try:
-            print(f"Enviando CMD_ELECTION para {id_vizinho}...\n")
+            print(f"Enviando CMD_ELECTION para {id_vizinho_print}...\n")
             mensagem = mensagens.cria_mensagem_eleicao(no["info"]["chave"])
             no["writer"].write(mensagem.encode('utf-8') + b'\n')
             await no["writer"].drain()
@@ -863,14 +855,14 @@ async def valentao():
             dados = await asyncio.wait_for(no["reader"].read(4096), timeout=10.0)
 
             if not dados:
-                print(f"Vizinho {id_vizinho} fechou a conexão.\n")
+                print(f"Vizinho {id_vizinho_print} fechou a conexão.\n")
                 continue
 
             resposta = mensagens.decodifica_mensagem(dados)
 
             if resposta.get('comando') == mensagens.CMD_SN2SN_ELEICAO_INICIADO:
                 # Ele respondeu "OK", registamos isso
-                print(f"Vizinho {id_vizinho} respondeu OK.\n")
+                print(f"Vizinho {id_vizinho_print} respondeu OK.\n")
 
                 # Registamos que PELO MENOS UM respondeu
                 recebi_ok_de_um_maior = True
@@ -880,11 +872,11 @@ async def valentao():
                 break
 
         except asyncio.TimeoutError:
-            print(f"Vizinho {id_vizinho} não respondeu (timeout). Ignorando.\n")
+            print(f"Vizinho {id_vizinho_print} não respondeu (timeout). Ignorando.\n")
             # Continuamos o loop, pois este valentão está fora do jogo
 
         except Exception as e:
-            print(f"Erro ao contactar vizinho {id_vizinho}: {e}. Assumindo que está morto.\n")
+            print(f"Erro ao contactar vizinho {id_vizinho_print}: {e}. Assumindo que está morto.\n")
             continue
 
     # Avalia o resultado APÓS o loop ter terminado

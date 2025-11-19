@@ -24,25 +24,25 @@ clear
 SSH_USER="rgm47006"
 
 # Caminho absoluto para a pasta do projeto
-PROJECT_PATH="/home/AD/rgm47006/Documentos/p2p-pdf-sharing"
+PROJECT_PATH="/home/local/rgm47006/p2p-pdf-sharing"
 
 # Terminal a ser usado para abrir novas janelas
 TERMINAL_CMD="gnome-terminal"
 
 # --- MAPA DA REDE ---
-IP_COORD="l4m03u.lab4" # IP desta máquina (Coordenador)
+IP_COORD="l1m11u.lab1" # IP desta máquina (Coordenador)
 
 # Supernós (Hostnames e Portas)
-IP_SN1="l1m30u.lab1"; PORT_SN1="8001"
-IP_SN2="l1m31u.lab1"; PORT_SN2="8002"
-IP_SN3="l4m02u.lab4"; PORT_SN3="8003"
-IP_SN4="l4m17u.lab4"; PORT_SN4="8004"
+IP_SN1="l1m12u.lab1"; PORT_SN1="8001"
+IP_SN2="l1m03u.lab1"; PORT_SN2="8002"
+IP_SN3="l4m08u.lab4"; PORT_SN3="8003"
+IP_SN4="l4m07u.lab4"; PORT_SN4="8004"
 
 # Clientes (Hostnames)
-CLIENTES_SN1=("l1m13u.lab1" "l1m14u.lab1" "l1m15u.lab1")
-CLIENTES_SN2=("l1m19u.lab1" "l1m21u.lab1" "l1m27u.lab1")
-CLIENTES_SN3=("l4m04u.lab4" "l4m05u.lab4" "l4m06u.lab4")
-CLIENTES_SN4=("l4m08u.lab4" "l4m21u.lab4" "l4m22u.lab4")
+CLIENTES_SN1=("l1m14u.lab1" "l1m06u.lab1" "l1m05u.lab1")
+CLIENTES_SN2=("l1m04u.lab1" "l1m21u.lab1" "l1m20u.lab1")
+CLIENTES_SN3=("l4m20u.lab4" "l4m06u.lab4" "l4m05u.lab4")
+CLIENTES_SN4=("l4m24u.lab4" "l4m02u.lab4" "l4m04u.lab4")
 # --- FIM DO MAPA ---
 
 
