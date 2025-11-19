@@ -217,8 +217,8 @@ async def registro():
         return False # Indica falha no registro
 
     # Gera a chave única usando hash (SHA-1) do IP
-    #chave_identificadora = uuid.uuid5(uuid.NAMESPACE_DNS, ipLocal)
-    chave_identificadora = uuid.uuid4()
+    chave_identificadora = uuid.uuid5(uuid.NAMESPACE_DNS, ipLocal)
+    #chave_identificadora = uuid.uuid4()
 
     print(f"Chave identificadora gerada (SHA-1): {chave_identificadora}")
 

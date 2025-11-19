@@ -1,10 +1,19 @@
 import asyncio
 import ipaddress
 import sys
+import json
 import uuid
 import os
 
-#from sympy.codegen import Print
+if os.path.exists("indice_replicado.json"):
+    try:
+        with open("indice_replicado.json", "r") as f:
+            indice_arquivos_local = json.load(f)
+        print(f"!!! ÍNDICE REPLICADO CARREGADO: {len(indice_arquivos_local)} arquivos !!!")
+        # Remove o arquivo após carregar para não recarregar em reboot futuro errado
+        os.remove("indice_replicado.json") 
+    except Exception as e:
+        print(f"Erro ao carregar índice replicado: {e}")
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 root_dir = os.path.abspath(os.path.join(current_dir, '../../'))
@@ -39,9 +48,6 @@ indice_arquivos_local = {}
 
 consenso_lock = asyncio.Lock()
 consenso_transacoes = {}
-
-async def multicastSuperno(mensagem):
-    ...
 
 async def handle_voto_cliente(requisicao):
     """
@@ -207,7 +213,12 @@ async def iniciar_replicacao_consenso(writer_novo_superno):
                     listaDeClientes.clear()
 
                 print("Redirecionando VIZINHOS (Supernós) para o novo Supernó...\n")
-                msg_update_vizinho = mensagens.cria_msg_redirect_vizinho(novo_sn_ip, novo_sn_porta)
+                msg_update_vizinho = mensagens.cria_msg_redirect_vizinho(
+                    novo_sn_ip, 
+                    novo_sn_porta,
+                    ipLocal, # Old IP (Eu mesmo, que virei Coord)
+                    portaSuperno # Old Porta
+                )
 
                 # Percorre a lista de Supernós vizinhos
                 for vizinho in superNosVizinhos:
@@ -280,6 +291,9 @@ async def registro():
 
     Coord["reader"] = reader
     Coord["writer"] = writer
+
+    print("Iniciando conexão com os vizinhos recebidos...\n")
+    await conectarComOutrosSupernos()
 
     #asyncio.create_task(monitorar_lider())
 
@@ -377,7 +391,12 @@ async def handle_indexar_arquivo(writer, requisicao):
 async def handle_query_vizinho(vizinho_writer, requisicao):
     filename = requisicao["payload"]["nome_arquivo"]
     chave_identificadora = requisicao["payload"]["chave_identificadora"]
-    addr_origem = vizinho_writer.get_extra_info('peername')
+
+    try:
+        addr_origem = vizinho_writer.get_extra_info('peername')
+    except:
+        addr_origem = "Desconhecido"
+
     print(f"Super nó {addr_origem} está buscando por {filename}.\n")
 
 
@@ -511,19 +530,23 @@ async def coordenador(reader, writer, addr):
     return False
 
 async def superno(reader, writer, addr):
-    print("superno chamado\n")
-    dados = await reader.read(4096)
-
-async def superno(reader, writer, addr):
     global ListaDeSupernos
     global superNosVizinhos
 
-    dados = await reader.readuntil(b'\n')
-
+    try:
+        dados = await reader.readuntil(b'\n')
+    except asyncio.IncompleteReadError:
+        # O outro lado fechou a conexão ou enviou dados incompletos
+        return True # Retorna True para sair do loop e fechar a conexão
+    
     novoComando = mensagens.decodifica_mensagem(dados)
-    comando = novoComando.get('comando')
 
-    print(f"{novoComando}\n")
+    if not novoComando:
+        print(f"[ERRO] Mensagem inválida ou vazia recebida de {addr}")
+        return False
+
+    comando = novoComando.get('comando')
+    print(f"Processando comando: {comando}\n")
 
     if comando == mensagens.CMD_CLIENTESN2_REQUISICAO_REGISTRO:
         # Caso de requisição de registro vinda de um cliente
@@ -534,10 +557,10 @@ async def superno(reader, writer, addr):
     elif comando == mensagens.CMD_SN2SN_NOVO_COORDENADOR:
         global portaCoordenador, ipServidor, Coord
         print(f"Um novo nó coordenador foi eleito: {novoComando}\n")
-        # ipServidor = novoComando["payload"]["ip"] #trocar no lab
-        portaCoordenador = novoComando["payload"]["porta"]
+        ipServidor = novoComando["payload"]["ip"] #trocar no lab
+        #portaCoordenador = novoComando["payload"]["porta"]
         for no in superNosVizinhos:
-            if no["info"]["porta"] == portaCoordenador: #trocar para ip no lab
+            if no["info"]["ip"] == ipServidor: #trocar para ip no lab
                 Coord["reader"] = no["reader"]
                 Coord["writer"] = no["writer"]
                 print("achou o novo coordenador")
@@ -602,7 +625,6 @@ async def superno(reader, writer, addr):
         await writer.drain()
     elif comando == mensagens.CMD_SN2COORD_PERGUNTA_ESTOU_VIVO:
         # O Supernó líder precisa responder que está vivo, se não os outros nós acham que ele morreu e fazem outrra eleição
-        
         msg_pong = mensagens.cria_resposta_estou_vivo()
         writer.write(msg_pong.encode('utf-8') + b'\n')
         await writer.drain()
@@ -615,12 +637,31 @@ async def superno(reader, writer, addr):
     elif comando == mensagens.CMD_SN2SN_REDIRECT_NEIGHBOR:
         novo_ip = novoComando["payload"]["ip"]
         nova_porta = novoComando["payload"]["porta"]
+
+        old_ip = novoComando["payload"]["old_ip"]
+        old_porta = novoComando["payload"]["old_porta"]
         
-        print(f"\n[ATUALIZAÇÃO] O Coordenador pediu para conectar no novo Supernó: {novo_ip}:{nova_porta}")
+        print(f"\nVizinho {old_ip}:{old_porta} virou Coordenador.\n")
+        print(f"Aguardando 5 segundos para o novo Supernó ({nova_porta}) inicializar...\n")
+
+        await asyncio.sleep(5.0)
+
+        print(f"Conectando ao substituto: {novo_ip}:{nova_porta}")
         
         # Conecta no Novo Supernó
         try:
             reader_novo, writer_novo = await asyncio.open_connection(novo_ip, nova_porta)
+
+            # Da um "hello" para o superno
+            msg_ping = mensagens.cria_mensagem_alive()
+            writer_novo.write(msg_ping.encode('utf-8') + b'\n')
+            await writer_novo.drain()
+            
+            try:
+                _ = await asyncio.wait_for(reader_novo.readuntil(b'\n'), timeout=2.0)
+                print(f"Handshake (PONG) recebido com sucesso de {nova_porta}.")
+            except Exception as e:
+                print(f"Aviso: Sem resposta imediata do Handshake ({e}), mas seguindo...")
             
             # Cria a estrutura do novo vizinho
             novo_vizinho = {
@@ -632,15 +673,19 @@ async def superno(reader, writer, addr):
             superNosVizinhos.append(novo_vizinho)
             
             # Inicia a escuta desse novo vizinho
-            asyncio.create_task(servidorSuperNo(reader_novo, writer_novo))
-            print(f"Conectado ao novo vizinho {nova_porta}.")
+            #asyncio.create_task(servidorSuperNo(reader_novo, writer_novo))
+            print(f"Conectado e Handshake enviado ao novo vizinho {nova_porta}.\n")
             
-            # Remove o Coordenador (Remetente desta msg) da lista de VIZINHOS P2P
+            tamanho_antes = len(superNosVizinhos)
+            superNosVizinhos = [
+                sn for sn in superNosVizinhos 
+                if not (sn["info"]["ip"] == old_ip and sn["info"]["porta"] == old_porta)
+            ]
             
-            # Filtra a lista mantendo apenas quem NÃO é o remetente desta mensagem
-            superNosVizinhos = [sn for sn in superNosVizinhos if sn["writer"] != writer]
-            
-            print("Coordenador removido da lista de vizinhos de busca (Query).")
+            if len(superNosVizinhos) < tamanho_antes:
+                print(f"Vizinho antigo {old_porta} removido da lista de busca.")
+            else:
+                print(f"Aviso: Vizinho antigo {old_porta} não foi encontrado na lista para remoção.")
 
         except Exception as e:
             print(f"[ERRO] Falha ao conectar no novo vizinho: {e}")
@@ -698,7 +743,7 @@ async def conectarComOutrosSupernos():
             # Guarda as conexões em uma lista global
             vizinhos.append({"reader": reader, "writer": writer, "info": sn})
         except Exception as e:
-            print(f"Falha ao conectar com {sn['conectarComOutrosSupernos()ip']}:{sn['porta']} -> {e}")
+            print(f"Falha ao conectar com {sn['ip']}:{sn['porta']} -> {e}")
 
     global superNosVizinhos
     superNosVizinhos = vizinhos
@@ -718,7 +763,7 @@ async def monitorar_lider():
     print("Monitor do Coordenador iniciado (ping/listen).\n")
 
     while True:
-        #Dorme pelo intervalo de verificação (ex: 5 segundos)
+        #Dorme pelo intervalo de verificação
         await asyncio.sleep(10)
 
         if isCoordenador: # Se eu sou o coordenador, não faço nada
@@ -783,8 +828,8 @@ async def valentao():
     desistoDeMeEleger = False  # Reseta a flag para esta nova eleição
 
     print("Começando lógica de eleição...\n")
-    # id_proprio = int(ipaddress.ip_address(ipLocal)) #usar no lab
-    id_proprio = portaSuperno
+    id_proprio = int(ipaddress.ip_address(ipLocal)) #usar no lab
+    #id_proprio = portaSuperno
 
     # Flag para saber se PELO MENOS UM "valentão" VIVO respondeu
     recebi_ok_de_um_maior = False
@@ -792,8 +837,8 @@ async def valentao():
     # Encontrar todos os vizinhos maiores
     vizinhos_maiores = []
     for no in superNosVizinhos:
-        # id_vizinho = int(ipaddress.ip_address(no["info"]["ip"])) #usar no lab
-        id_vizinho = no["info"]["porta"]
+        id_vizinho = int(ipaddress.ip_address(no["info"]["ip"])) #usar no lab
+        # id_vizinho = no["info"]["porta"]
         if id_proprio < id_vizinho:
             vizinhos_maiores.append(no)
 
@@ -806,8 +851,8 @@ async def valentao():
     # Se há vizinhos maiores, contacta-os A TODOS
     print(f"Contactando {len(vizinhos_maiores)} vizinhos maiores...\n")
     for no in vizinhos_maiores:
-        # id_vizinho = int(ipaddress.ip_address(no["info"]["ip"])) #usar no lab
-        id_vizinho = no["info"]["porta"]
+        id_vizinho = int(ipaddress.ip_address(no["info"]["ip"])) #usar no lab
+        #id_vizinho = no["info"]["porta"]
 
         try:
             print(f"Enviando CMD_ELECTION para {id_vizinho}...\n")

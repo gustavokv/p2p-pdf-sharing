@@ -150,8 +150,12 @@ def cria_msg_replica_indice(indice):
 def cria_msg_redirect(novo_ip, nova_porta):
     return criar_mensagem(CMD_SN2CLIENTE_REDIRECT, ip=novo_ip, porta=nova_porta)
 
-def cria_msg_redirect_vizinho(novo_ip, nova_porta):
-    return criar_mensagem(CMD_SN2SN_REDIRECT_NEIGHBOR, ip=novo_ip, porta=nova_porta)
+def cria_msg_redirect_vizinho(novo_ip, nova_porta, old_ip, old_porta):
+    return criar_mensagem(CMD_SN2SN_REDIRECT_NEIGHBOR, 
+                          ip=novo_ip, 
+                          porta=nova_porta,
+                          old_ip=old_ip,
+                          old_porta=old_porta)
 
 # <--- Funções do cliente --->
 

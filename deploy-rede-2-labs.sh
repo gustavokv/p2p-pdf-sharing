@@ -152,6 +152,7 @@ sleep 20
 # 3. Iniciar os Clientes (Remotamente, em terminais locais)
 echo -e "\n[FASE 3/3] Iniciando 12 Clientes remotamente (monitorados)..."
 i=1
+BASE_PEER_PORT=9000
 
 echo "  Iniciando clientes do Supernó 1 ($IP_SN1)..."
 for ip in "${CLIENTES_SN1[@]}"; do
