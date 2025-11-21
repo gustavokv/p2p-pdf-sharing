@@ -21,10 +21,10 @@ clear
 # --- CONFIGURAÇÃO DA REDE (PREENCHA AQUI) ---
 
 # Usuário SSH para conectar às máquinas remotas
-SSH_USER="rgm47006"
+SSH_USER="SEU_USER_AQUI"
 
 # Caminho absoluto para a pasta do projeto
-PROJECT_PATH="/home/local/rgm47006/p2p-pdf-sharing"
+PROJECT_PATH="CAMINHO_PROJETO"
 
 # Terminal a ser usado para abrir novas janelas
 TERMINAL_CMD="gnome-terminal"
