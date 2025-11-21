@@ -92,7 +92,8 @@ Esta opção sobe a rede completa (1 Coordenador, 4 Supernós e 12 Clientes) aut
     ```bash
     chmod +x deploy-rede-2-labs.sh iniciar-no.sh
     ```
-3.  *(Opcional)* Se for rodar apenas em uma máquina local, utilize o script correspondente (se houver). O script entregue já está configurado para o ambiente de laboratório alvo.
+3.  *(Opcional)* Se for rodar apenas em uma máquina local, utilize o script ```deploy-local.sh```.
+
 4.  Execute o script de deploy:
     ```bash
     ./deploy-rede-2-labs.sh
